@@ -25,6 +25,9 @@ export interface Appointment {
   status: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled';
   notes?: string;
   createdAt: string;
+  paymentStatus?: 'Paid' | 'Pending' | 'Failed';
+  rating?: number;
+  feedbackText?: string;
 }
 
 export interface Doctor {
@@ -33,6 +36,7 @@ export interface Doctor {
   specialization: string;
   department: string;
   consultationFee: number;
+  isAvailable?: boolean;
 }
 
 export type ViewType = 'dashboard' | 'patients' | 'database' | 'api' | 'uiux' | 'appointments';

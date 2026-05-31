@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Appointment, Patient } from '../types';
+import { Appointment, Patient, Doctor } from '../types';
 import { initialDoctors } from '../data';
 import { motion, AnimatePresence } from 'motion/react';
+import StarRatingDisplay from './StarRatingDisplay';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -349,6 +350,29 @@ export default function AppointmentCalendar({
                       <UserCheck className="h-3.5 w-3.5 text-teal-400 shrink-0" />
                       <span>{selectedAppt.doctorName}</span>
                     </p>
+                    {(() => {
+                      let savedReviews = [];
+                      try {
+                        const saved = localStorage.getItem('med_reviews_v1');
+                        if (saved) savedReviews = JSON.parse(saved);
+                      } catch {}
+                      const docReviews = savedReviews.filter((r: any) => r.doctorId === selectedAppt.doctorId || r.doctorName === selectedAppt.doctorName);
+                      let ratingVal = 4.8;
+                      let countVal = 12;
+                      if (selectedAppt.doctorId === "DOC-2026-002") { ratingVal = 4.6; countVal = 8; }
+                      else if (selectedAppt.doctorId === "DOC-2026-003") { ratingVal = 4.5; countVal = 4; }
+                      else if (selectedAppt.doctorId === "DOC-2026-004") { ratingVal = 4.9; countVal = 15; }
+                      
+                      if (docReviews.length > 0) {
+                        ratingVal = docReviews.reduce((acc: number, curr: any) => acc + curr.rating, 0) / docReviews.length;
+                        countVal = docReviews.length;
+                      }
+                      return (
+                        <div className="mt-0.5 ml-5 flex items-center">
+                          <StarRatingDisplay rating={ratingVal} count={countVal} size={11} className="text-slate-300" />
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div>
@@ -471,6 +495,18 @@ export default function AppointmentCalendar({
           <div className="flex items-center gap-1.5"><User className="h-3 w-3 text-slate-500 shrink-0" /><span className="text-slate-400 font-medium">Patient:</span> <strong className="text-slate-100 font-semibold">{hoveredApt.patientName}</strong></div>
           <div className="flex items-center gap-1.5"><UserCheck className="h-3 w-3 text-slate-500 shrink-0" /><span className="text-slate-400 font-medium">Specialist:</span> <strong className="text-slate-100 font-semibold">{hoveredApt.doctorName}</strong></div>
           <div className="flex items-center gap-1.5"><Clock className="h-3 w-3 text-slate-500 shrink-0" /><span className="text-slate-400 font-medium">Time Slot:</span> <strong className="text-slate-100 font-semibold font-mono">{new Date(hoveredApt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</strong></div>
+          <div className="flex items-center gap-1.5 pt-1 border-t border-slate-850/60 mt-1">
+            <span className="text-slate-400 font-medium text-[9.5px]">Payment Status:</span>
+            <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono uppercase font-black tracking-wider ${
+              (hoveredApt.paymentStatus === 'Paid' || hoveredApt.status === 'Completed' || hoveredApt.status === 'Confirmed')
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                : hoveredApt.paymentStatus === 'Failed' 
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+            }`}>
+              {hoveredApt.paymentStatus || ((hoveredApt.status === 'Completed' || hoveredApt.status === 'Confirmed') ? 'Paid' : 'Pending')}
+            </span>
+          </div>
         </div>
       )}
 

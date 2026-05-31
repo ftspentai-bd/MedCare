@@ -183,6 +183,45 @@ export const dbSchemaTables = [
       { name: "date_time", type: "TIMESTAMP", desc: "Appointment time index with unique constraint" },
       { name: "status", type: "VARCHAR(50)", desc: "'pending' | 'confirmed' | 'completed' | 'cancelled'" }
     ]
+  },
+  {
+    name: "doctor_reviews",
+    type: "Customer Sentiment",
+    description: "Multi-point ratings, reviews, and professional sentiment feedback given from verified patient encounters.",
+    fields: [
+      { name: "id", type: "UUID (Primary Key)", desc: "Review key identifier" },
+      { name: "doctor_id", type: "UUID (FKey)", desc: "Linked practitioner" },
+      { name: "patient_id", type: "UUID (FKey)", desc: "Authoring patient account" },
+      { name: "rating", type: "INTEGER (1-5)", desc: "Evaluated quality score" },
+      { name: "review_text", type: "TEXT", desc: "Qualitative treatment description notes" },
+      { name: "created_at", type: "TIMESTAMP", desc: "Submission time log" }
+    ]
+  },
+  {
+    name: "payment_transactions",
+    type: "Financial Auditing",
+    description: "Transactional records tracing mock Stripe and CC checkouts securely back to successful appointments.",
+    fields: [
+      { name: "id", type: "UUID (Primary Key)", desc: "Receipt ledger reference" },
+      { name: "appointment_id", type: "UUID (FKey)", desc: "Triggering consultation node" },
+      { name: "amount", type: "DECIMAL(10,2)", desc: "Consultation rate fee charged" },
+      { name: "billing_name", type: "VARCHAR(255)", desc: "Cardholder identity" },
+      { name: "payment_status", type: "VARCHAR(50)", desc: "'succeeded' | 'processing' | 'failed'" },
+      { name: "is_subscription", type: "BOOLEAN", desc: "Flag for automated recurring billing" },
+      { name: "subscription_id", type: "VARCHAR(100)", desc: "Reference ID for recurring mandate" },
+      { name: "created_at", type: "TIMESTAMP", desc: "Monetary dispatch index" }
+    ]
+  },
+  {
+    name: "doctor_scheduling_slots",
+    type: "Operational Capacity",
+    description: "Configurable hour buckets and session availability tags per doctor, serving as lookup source.",
+    fields: [
+      { name: "id", type: "UUID (Primary Key)", desc: "Slot tracking hash" },
+      { name: "doctor_id", type: "UUID (FKey)", desc: "Assigned practitioner" },
+      { name: "slot_time", type: "TIMESTAMP", desc: "Bookable date/time segment block" },
+      { name: "is_available", type: "BOOLEAN", desc: "Active availability flag" }
+    ]
   }
 ];
 
@@ -220,7 +259,49 @@ export const apiEndpoints = [
     method: "GET",
     scope: "Public",
     description: "Compute list of next 30-day empty slots based on doctor schedules and existing bookings.",
-    status: "Under Review"
+    status: "Implemented"
+  },
+  {
+    path: "/api/appointments/book-slot",
+    method: "POST",
+    scope: "Patient Session",
+    description: "Reserve a scheduling slot, validate provider hours and commit record under pending constraint.",
+    status: "Implemented"
+  },
+  {
+    path: "/api/doctors/:id/reviews",
+    method: "GET",
+    scope: "Public",
+    description: "Query full rating lists, average scores, and qualitative text feedback associated with a doctor.",
+    status: "Implemented"
+  },
+  {
+    path: "/api/doctors/:id/reviews",
+    method: "POST",
+    scope: "Patient Session",
+    description: "Post a verified doctor rating and qualitative clinic session experience review.",
+    status: "Implemented"
+  },
+  {
+    path: "/api/checkout/process",
+    method: "POST",
+    scope: "Patient Session",
+    description: "Process a mock Stripe-like payment. Expects payload: { appointmentId, cardNumber, expDate, cvv, billingName, amount, isSubscription }. Returns receipt model: { status: 'success'|'failed', txId, subscriptionId?, amount, timestamp }.",
+    status: "Implemented"
+  },
+  {
+    path: "/api/checkout/payment-intent",
+    method: "POST",
+    scope: "Patient Session",
+    description: "Establish a mock checkout session capturing specified credit card details and verifying consultation fees.",
+    status: "Implemented"
+  },
+  {
+    path: "/api/payments/webhook",
+    method: "POST",
+    scope: "Stripe System",
+    description: "Listen for raw transactional events, log standard payment ledger entries, and auto-confirm scheduled appointments.",
+    status: "Implemented"
   },
   {
     path: "/api/visit-records",

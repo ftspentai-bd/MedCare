@@ -46,6 +46,8 @@ import PatientDashboard from './components/PatientDashboard';
 import PatientVitalsChart from './components/PatientVitalsChart';
 import PatientAgeTrendChart from './components/PatientAgeTrendChart';
 import AppointmentCalendar from './components/AppointmentCalendar';
+import StarRatingDisplay from './components/StarRatingDisplay';
+import PaymentModule from './components/PaymentModule';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
@@ -120,6 +122,28 @@ export default function App() {
     sessionStorage.setItem('acting_patient_id', actingPatientId);
   }, [actingPatientId]);
   
+  // Doctor domain state with persistence
+  const [doctors, setDoctors] = useState<Doctor[]>(() => {
+    try {
+      const saved = localStorage.getItem('med_doctors_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return initialDoctors;
+  });
+
+  const updateDoctorAvailability = (docId: string, isAvailable: boolean) => {
+    setDoctors(prev => {
+      const updated = prev.map(d => d.id === docId ? { ...d, isAvailable } : d);
+      try {
+        localStorage.setItem('med_doctors_v1', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  // Payment Module state
+  const [activeCheckoutApt, setActiveCheckoutApt] = useState<Appointment | null>(null);
+
   // Patient domain state
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [searchQuery, setSearchQuery] = useState('');
@@ -168,6 +192,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(false);
   const [appointmentSearchQuery, setAppointmentSearchQuery] = useState('');
   const [ledgerTab, setLedgerTab] = useState<'calendar' | 'list'>('calendar');
+  const [ledgerDocFilterId, setLedgerDocFilterId] = useState<string>('all');
   
   const initialFormState = {
     name: '',
@@ -210,8 +235,41 @@ export default function App() {
   // Selected detail states for pillars
   const [selectedTable, setSelectedTable] = useState<string>("patients");
 
+  // State for upcoming consultation notifications
+  const [notifications, setNotifications] = useState<{id: string; message: string}[]>([]);
+
+  React.useEffect(() => {
+    const checkUpcoming = () => {
+      const now = Date.now();
+      const upcoming = appointments.filter(apt => {
+        if (apt.status !== 'Confirmed') return false;
+        
+        if (userRole === 'patient' && apt.patientId !== actingPatientId) return false;
+        // For admin and doctor we show all, or we could filter by acting doctor, but no acting doctor id exists
+        
+        const aptTime = new Date(apt.dateTime).getTime();
+        const diffValid = aptTime - now;
+        // 1 hour is 3600000 ms. Let's warn if it's within 60 minutes and > 0 mins
+        return diffValid > 0 && diffValid <= 3600000;
+      });
+
+      if (upcoming.length > 0) {
+        setNotifications(upcoming.map(apt => ({
+          id: apt.id, 
+          message: `Alert: Upcoming Consultation - ${(userRole === 'patient') ? `with ${apt.doctorName}` : `${apt.patientName} with ${apt.doctorName}`} in less than 1 hour (${new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})`
+        })));
+      } else {
+        setNotifications([]);
+      }
+    };
+
+    checkUpcoming();
+    const interval = setInterval(checkUpcoming, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [appointments, userRole, actingPatientId]);
+
   // Selected detail active tab within expanded patient detail block
-  const [detailTab, setDetailTab] = useState<'info' | 'history' | 'vitals' | 'age-trend'>('info');
+  const [detailTab, setDetailTab] = useState<'info' | 'history' | 'vitals' | 'age-trend' | 'invoices'>('info');
 
   // Reset tab when change selection
   React.useEffect(() => {
@@ -527,6 +585,12 @@ export default function App() {
 
   // Change Appointment Status
   const updateAppointmentStatus = (id: string, newStatus: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled') => {
+    const targetApt = appointments.find(a => a.id === id);
+    if (newStatus === 'Confirmed' && targetApt) {
+      // Route to Stripe payment checkout modal!
+      setActiveCheckoutApt(targetApt);
+      return;
+    }
     setAppointments(prev => prev.map(apt => {
       if (apt.id === id) {
         return {
@@ -536,6 +600,47 @@ export default function App() {
       }
       return apt;
     }));
+  };
+
+  // Complete Stripe checkout payment & record transaction
+  const handlePaymentSuccess = (receipt: { txId: string; amount: number; billingName: string; createdAt: string; isSubscription?: boolean; subscriptionId?: string; }) => {
+    if (!activeCheckoutApt) return;
+
+    // 1. Set appointment status to Confirmed and payment status to Paid
+    setAppointments(prev => prev.map(apt => {
+      if (apt.id === activeCheckoutApt.id) {
+        return {
+          ...apt,
+          status: 'Confirmed',
+          paymentStatus: 'Paid'
+        };
+      }
+      return apt;
+    }));
+
+    // 2. Commit transaction metadata record to localStorage
+    try {
+      const savedTxRaw = localStorage.getItem('med_transactions_v1');
+      let savedTx = savedTxRaw ? JSON.parse(savedTxRaw) : [];
+      const newTx = {
+        id: receipt.txId,
+        appointmentId: activeCheckoutApt.id,
+        patientId: activeCheckoutApt.patientId,
+        patientName: activeCheckoutApt.patientName,
+        doctorId: activeCheckoutApt.doctorId,
+        doctorName: activeCheckoutApt.doctorName,
+        amount: receipt.amount,
+        status: 'Success',
+        billingName: receipt.billingName,
+        createdAt: receipt.createdAt,
+        isSubscription: receipt.isSubscription || false,
+        subscriptionId: receipt.subscriptionId || null
+      };
+      savedTx = [newTx, ...savedTx];
+      localStorage.setItem('med_transactions_v1', JSON.stringify(savedTx));
+    } catch (e) {
+      console.error("Error storing sandbox payment transaction:", e);
+    }
   };
 
   // Safe helper to update patient avatar locally in state
@@ -612,6 +717,7 @@ export default function App() {
   // Memoized query filter for scheduled medical consultations
   const filteredAppointments = React.useMemo(() => {
     return appointments.filter(apt => {
+      if (ledgerDocFilterId !== 'all' && apt.doctorId !== ledgerDocFilterId) return false;
       if (!appointmentSearchQuery.trim()) return true;
       const q = appointmentSearchQuery.toLowerCase();
       return (
@@ -621,7 +727,7 @@ export default function App() {
         (apt.doctorId || '').toLowerCase().includes(q)
       );
     });
-  }, [appointments, appointmentSearchQuery]);
+  }, [appointments, appointmentSearchQuery, ledgerDocFilterId]);
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
@@ -1604,18 +1710,22 @@ export default function App() {
               <DoctorDashboard 
                 patients={patients}
                 appointments={appointments}
+                doctors={doctors}
                 updateAppointmentStatus={updateAppointmentStatus}
                 deletePatient={deletePatient}
                 setSelectedPatientId={setSelectedPatientId}
                 setActiveView={setActiveView}
+                updateDoctorAvailability={updateDoctorAvailability}
               />
             ) : (
               <PatientDashboard 
                 patients={patients}
                 appointments={appointments}
+                doctors={doctors}
                 actingPatientId={actingPatientId}
                 setSelectedPatientId={setSelectedPatientId}
                 setActiveView={setActiveView}
+                setAppointments={setAppointments}
               />
             )
           )}
@@ -2152,6 +2262,12 @@ export default function App() {
                                 >
                                   Age Trend
                                 </button>
+                                <button
+                                  onClick={() => setDetailTab('invoices')}
+                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                >
+                                  Patient Invoices
+                                </button>
                               </div>
                               
                               {detailTab === 'info' ? (
@@ -2190,6 +2306,129 @@ export default function App() {
                                   appointments={appointments} 
                                   clinicalNotes={pat.clinicalNotes} 
                                 />
+                              ) : detailTab === 'invoices' ? (
+                                (() => {
+                                  let pTxs: any[] = [];
+                                  try {
+                                    const saved = localStorage.getItem('med_transactions_v1');
+                                    if (saved) {
+                                      const allTxs = JSON.parse(saved);
+                                      // match by billing name broadly, or we could just show all for this dummy patient.
+                                      // since transactions don't store patientId by default in the data model (only appointmentId and billingName),
+                                      // let's grab transactions where the matching appointment belongs to this patient
+                                      const patAptIds = appointments.filter(a => a.patientId === pat.id).map(a => a.id);
+                                      pTxs = allTxs.filter((tx: any) => patAptIds.includes(tx.appointmentId));
+                                    }
+                                  } catch {}
+
+                                  const printBulk = () => {
+                                    if(pTxs.length === 0) return;
+                                    const printWindow = window.open('', '', 'height=600,width=800');
+                                    if (!printWindow) return;
+                                    
+                                    const receiptHtml = `
+                                      <html>
+                                        <head>
+                                          <title>Patient Bulk Invoices - ${pat.name}</title>
+                                          <style>
+                                            body { font-family: monospace; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; }
+                                            h1 { text-align: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 20px; }
+                                            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                                            th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
+                                            th { background-color: #f1f5f9; }
+                                            .total { font-size: 1.2em; font-weight: bold; margin-top: 20px; text-align: right; }
+                                          </style>
+                                        </head>
+                                        <body>
+                                          <h1>Comprehensive Patient Invoice Manifest</h1>
+                                          <p><strong>Patient Name:</strong> ${pat.name}</p>
+                                          <p><strong>Record ID:</strong> ${pat.id}</p>
+                                          <p><strong>Date Generated:</strong> ${new Date().toLocaleString()}</p>
+                                          <table>
+                                            <thead>
+                                              <tr>
+                                                <th>TXN ID</th>
+                                                <th>APT ID</th>
+                                                <th>Date Issued</th>
+                                                <th>Amount</th>
+                                                <th>Status</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              ${pTxs.map(tx => `
+                                                <tr>
+                                                  <td>${tx.id}</td>
+                                                  <td>${tx.appointmentId}</td>
+                                                  <td>${new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                  <td>$${(typeof tx.amount === 'number' ? tx.amount : 115).toFixed(2)}</td>
+                                                  <td>Settled</td>
+                                                </tr>
+                                              `).join('')}
+                                            </tbody>
+                                          </table>
+                                          <div class="total">
+                                            Total Billed: $${pTxs.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 115), 0).toFixed(2)}
+                                          </div>
+                                        </body>
+                                      </html>
+                                    `;
+                                    printWindow.document.write(receiptHtml);
+                                    printWindow.document.close();
+                                    setTimeout(() => {
+                                      printWindow.print();
+                                    }, 250);
+                                  };
+
+                                  return (
+                                    <div className="space-y-4 font-sans">
+                                      <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                          <p className="font-bold text-white text-xs">Financial Ledger Overview</p>
+                                          <p className="text-[10px] text-slate-400">Track and monitor pending/settled consultation invoices for {pat.name}</p>
+                                        </div>
+                                        <button onClick={printBulk} disabled={pTxs.length === 0} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded text-xs font-mono font-bold transition">
+                                          Print Bulk PDF
+                                        </button>
+                                      </div>
+                                      
+                                      {pTxs.length === 0 ? (
+                                        <div className="text-center py-6 text-slate-550 border border-dashed border-slate-800 rounded-lg">
+                                          <p className="font-semibold text-xs text-slate-405">No Invoices Found</p>
+                                          <p className="text-[10px] text-slate-500 mt-1">This patient has no recorded financial transactions.</p>
+                                        </div>
+                                      ) : (
+                                        <div className="overflow-x-auto">
+                                          <table className="w-full text-left text-xs bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+                                            <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 font-mono text-[10px] uppercase">
+                                              <tr>
+                                                <th className="p-3 font-semibold">TxID</th>
+                                                <th className="p-3 font-semibold">Appointment</th>
+                                                <th className="p-3 font-semibold">Date</th>
+                                                <th className="p-3 font-semibold">Amount</th>
+                                                <th className="p-3 font-semibold text-right">Status</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-800/60">
+                                              {pTxs.map(tx => (
+                                                <tr key={tx.id} className="hover:bg-slate-900/50 transition-colors pointer-events-none">
+                                                  <td className="p-3 font-mono font-bold text-teal-400">{tx.id}</td>
+                                                  <td className="p-3 font-mono text-white">{tx.appointmentId}</td>
+                                                  <td className="p-3 text-slate-400">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                  <td className="p-3 font-mono text-white">${(typeof tx.amount === 'number' ? tx.amount : 115).toFixed(2)}</td>
+                                                  <td className="p-3 text-right">
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-widest bg-emerald-950/30 text-emerald-400 border border-emerald-900">
+                                                      Settled
+                                                    </span>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()
                               ) : (() => {
                                 const completedVisits = appointments.filter(a => a.patientId === pat.id && a.status === 'Completed');
                                 return (
@@ -2277,6 +2516,12 @@ export default function App() {
                               >
                                 My Clinical Vitals Chart
                               </button>
+                              <button
+                                onClick={() => setDetailTab('invoices')}
+                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                              >
+                                My Patient Invoices
+                              </button>
                             </div>
                             
                             {detailTab === 'info' ? (
@@ -2300,6 +2545,125 @@ export default function App() {
                               </div>
                             ) : detailTab === 'vitals' ? (
                               <PatientVitalsChart patientId={pat.id} appointments={appointments} />
+                            ) : detailTab === 'invoices' ? (
+                              (() => {
+                                let pTxs: any[] = [];
+                                try {
+                                  const saved = localStorage.getItem('med_transactions_v1');
+                                  if (saved) {
+                                    const allTxs = JSON.parse(saved);
+                                    const patAptIds = appointments.filter(a => a.patientId === pat.id).map(a => a.id);
+                                    pTxs = allTxs.filter((tx: any) => patAptIds.includes(tx.appointmentId));
+                                  }
+                                } catch {}
+
+                                const printBulk = () => {
+                                  if(pTxs.length === 0) return;
+                                  const printWindow = window.open('', '', 'height=600,width=800');
+                                  if (!printWindow) return;
+                                  
+                                  const receiptHtml = `
+                                    <html>
+                                      <head>
+                                        <title>My Invoices - ${pat.name}</title>
+                                        <style>
+                                          body { font-family: monospace; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; }
+                                          h1 { text-align: center; border-bottom: 2px dashed #cbd5e1; padding-bottom: 20px; }
+                                          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                                          th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; }
+                                          th { background-color: #f1f5f9; }
+                                          .total { font-size: 1.2em; font-weight: bold; margin-top: 20px; text-align: right; }
+                                        </style>
+                                      </head>
+                                      <body>
+                                        <h1>My Invoice Manifest</h1>
+                                        <p><strong>Patient Name:</strong> ${pat.name}</p>
+                                        <p><strong>Date Generated:</strong> ${new Date().toLocaleString()}</p>
+                                        <table>
+                                          <thead>
+                                            <tr>
+                                              <th>TXN ID</th>
+                                              <th>APT ID</th>
+                                              <th>Date Issued</th>
+                                              <th>Amount</th>
+                                              <th>Status</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            ${pTxs.map(tx => `
+                                              <tr>
+                                                <td>${tx.id}</td>
+                                                <td>${tx.appointmentId}</td>
+                                                <td>${new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                <td>$${(typeof tx.amount === 'number' ? tx.amount : 115).toFixed(2)}</td>
+                                                <td>Settled</td>
+                                              </tr>
+                                            `).join('')}
+                                          </tbody>
+                                        </table>
+                                        <div class="total">
+                                          Total Billed: $${pTxs.reduce((acc, t) => acc + (typeof t.amount === 'number' ? t.amount : 115), 0).toFixed(2)}
+                                        </div>
+                                      </body>
+                                    </html>
+                                  `;
+                                  printWindow.document.write(receiptHtml);
+                                  printWindow.document.close();
+                                  setTimeout(() => {
+                                    printWindow.print();
+                                  }, 250);
+                                };
+
+                                return (
+                                  <div className="space-y-4 font-sans">
+                                    <div className="flex items-center justify-between">
+                                      <div className="space-y-0.5">
+                                        <p className="font-bold text-white text-xs">My Financial Ledger</p>
+                                        <p className="text-[10px] text-slate-400">Track your consultation invoices</p>
+                                      </div>
+                                      <button onClick={printBulk} disabled={pTxs.length === 0} className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded text-xs font-mono font-bold transition">
+                                        Download All Invoices (PDF)
+                                      </button>
+                                    </div>
+                                    
+                                    {pTxs.length === 0 ? (
+                                      <div className="text-center py-6 text-slate-550 border border-dashed border-slate-800 rounded-lg">
+                                        <p className="font-semibold text-xs text-slate-405">No Invoices Found</p>
+                                        <p className="text-[10px] text-slate-500 mt-1">You have no recorded financial transactions.</p>
+                                      </div>
+                                    ) : (
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-left text-xs bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+                                          <thead className="bg-slate-900 border-b border-slate-800 text-slate-400 font-mono text-[10px] uppercase">
+                                            <tr>
+                                              <th className="p-3 font-semibold">TxID</th>
+                                              <th className="p-3 font-semibold">Appointment</th>
+                                              <th className="p-3 font-semibold">Date</th>
+                                              <th className="p-3 font-semibold">Amount</th>
+                                              <th className="p-3 font-semibold text-right">Status</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-800/60">
+                                            {pTxs.map(tx => (
+                                              <tr key={tx.id} className="hover:bg-slate-900/50 transition-colors pointer-events-none">
+                                                <td className="p-3 font-mono font-bold text-teal-400">{tx.id}</td>
+                                                <td className="p-3 font-mono text-white">{tx.appointmentId}</td>
+                                                <td className="p-3 text-slate-400">{new Date(tx.createdAt).toLocaleDateString()}</td>
+                                                <td className="p-3 font-mono text-white">${(typeof tx.amount === 'number' ? tx.amount : 115).toFixed(2)}</td>
+                                                <td className="p-3 text-right">
+                                                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-mono font-bold uppercase tracking-widest bg-emerald-950/30 text-emerald-400 border border-emerald-900">
+                                                    Settled
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()
                             ) : (() => {
                               const completedVisits = appointments.filter(a => a.patientId === pat.id && a.status === 'Completed');
                               return (
@@ -2590,7 +2954,21 @@ export default function App() {
                     </p>
                   </div>
                   
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
+                    {/* Admin Doctor Filter Toggle */}
+                    {userRole === 'admin' && (
+                      <select
+                        value={ledgerDocFilterId}
+                        onChange={(e) => setLedgerDocFilterId(e.target.value)}
+                        className="px-3 py-2 border border-slate-300 dark:border-slate-800 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none font-mono cursor-pointer transition-all"
+                      >
+                        <option value="all">ALL DEPARTMENTS & DOCTORS</option>
+                        {initialDoctors.map(doc => (
+                          <option key={doc.id} value={doc.id}>{doc.name}</option>
+                        ))}
+                      </select>
+                    )}
+
                     {/* Switcher Controls */}
                     <div className="flex items-center space-x-1 bg-slate-100 dark:bg-slate-950 p-1 rounded-lg border border-slate-200/60 dark:border-slate-800">
                       <button
@@ -2644,7 +3022,7 @@ export default function App() {
 
                 {ledgerTab === 'calendar' ? (
                   <AppointmentCalendar 
-                    appointments={appointments}
+                    appointments={filteredAppointments}
                     patients={patients}
                     updateAppointmentStatus={updateAppointmentStatus}
                     deleteAppointment={(id) => setAppointments(appointments.filter(a => a.id !== id))}
@@ -3046,6 +3424,64 @@ export default function App() {
           </span>
         </div>
       </footer>
+
+      {/* SECURE STRIPE CHECKOUT MODAL WINDOW INTERPRETER */}
+      <AnimatePresence>
+        {activeCheckoutApt && (
+          <PaymentModule
+            isOpen={true}
+            appointmentId={activeCheckoutApt.id}
+            doctorName={activeCheckoutApt.doctorName}
+            specialization={"Specialist"}
+            dateTime={new Date(activeCheckoutApt.dateTime).toLocaleString()}
+            fee={(() => {
+              const fees: { [key: string]: number } = {
+                "DOC-2026-001": 150,
+                "DOC-2026-002": 120,
+                "DOC-2026-003": 95,
+                "DOC-2026-004": 200,
+              };
+              return fees[activeCheckoutApt.doctorId] || 110;
+            })()}
+            onClose={() => setActiveCheckoutApt(null)}
+            onPaymentSuccess={(receipt) => {
+              handlePaymentSuccess(receipt);
+              setActiveCheckoutApt(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* AUTOMATED NOTIFICATION TOASTS */}
+      <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map((notif) => (
+            <motion.div
+              key={notif.id}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              className="bg-slate-900 border border-slate-700 shadow-xl rounded-lg p-4 pr-10 relative pointer-events-auto flex items-start gap-3 w-80 text-white"
+            >
+              <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs font-semibold leading-snug">{notif.message}</p>
+                <div className="mt-2 h-0.5 w-full bg-slate-800 rounded overflow-hidden">
+                  <div className="h-full bg-amber-400 w-1/3 animate-pulse" />
+                </div>
+              </div>
+              <button 
+                onClick={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+                className="absolute top-2 right-2 text-slate-400 hover:text-white transition-colors"
+                title="Dismiss"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       </div> {/* End main-app-container */}
 

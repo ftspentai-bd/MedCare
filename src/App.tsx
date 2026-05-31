@@ -36,7 +36,8 @@ import {
   Camera,
   Video,
   VideoOff,
-  Printer
+  Printer,
+  LogOut
 } from 'lucide-react';
 import { initialPatients, pillars, dbSchemaTables, apiEndpoints, initialDoctors, initialAppointments } from './data';
 import { Patient, ViewType, Appointment, Doctor } from './types';
@@ -48,6 +49,7 @@ import PatientAgeTrendChart from './components/PatientAgeTrendChart';
 import AppointmentCalendar from './components/AppointmentCalendar';
 import StarRatingDisplay from './components/StarRatingDisplay';
 import PaymentModule from './components/PaymentModule';
+import LandingPage from './components/LandingPage';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
@@ -91,6 +93,14 @@ export const getDaysUntil = (dateTimeStr: string): string => {
 };
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      const saved = sessionStorage.getItem('is_authenticated');
+      if (saved) return saved === 'true';
+    } catch {}
+    return false;
+  });
+
   // Mobile sidebar state
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -113,6 +123,10 @@ export default function App() {
     } catch {}
     return 'PAT-2026-0301';
   });
+
+  React.useEffect(() => {
+    sessionStorage.setItem('is_authenticated', isAuthenticated ? 'true' : 'false');
+  }, [isAuthenticated]);
 
   React.useEffect(() => {
     sessionStorage.setItem('user_role', userRole);
@@ -365,6 +379,9 @@ export default function App() {
     if (!formValues.contact.trim()) {
       errors.contact = "A primary contact phone/email is required.";
     }
+    if (!formValues.clinicalNotes?.trim()) {
+      errors.clinicalNotes = "Persistent clinical notes are required to proceed.";
+    }
 
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
@@ -583,6 +600,83 @@ export default function App() {
     setIsSchedFormOpen(false);
   };
 
+  const getTabClass = (isActive: boolean) => 
+    `pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${isActive ? 'border-b-2 border-teal-500 text-teal-600 dark:text-teal-400 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`;
+
+  const printPatientSummary = (pat: Patient) => {
+    const printWindow = window.open('', '', 'height=800,width=800');
+    if (!printWindow) return;
+    
+    const patHistory = appointments.filter(a => a.patientId === pat.id).sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+
+    const receiptHtml = `
+      <html>
+        <head>
+          <title>Patient Summary - ${pat.name}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+            h1 { text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 20px; font-size: 24px; color: #0f172a; }
+            h2 { font-size: 18px; color: #334155; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+            .label { font-weight: bold; color: #64748b; font-size: 14px; }
+            .value { font-weight: 500; font-size: 14px; text-align: right; }
+            .notes { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; font-family: monospace; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; color: #475569; }
+          </style>
+        </head>
+        <body>
+          <h1>Patient Medical Summary</h1>
+          
+          <h2>Demographics</h2>
+          <div class="row"><span class="label">Patient Name:</span> <span class="value">${pat.name}</span></div>
+          <div class="row"><span class="label">Patient ID:</span> <span class="value">${pat.id}</span></div>
+          <div class="row"><span class="label">Date of Birth:</span> <span class="value">${pat.dateOfBirth}</span></div>
+          <div class="row"><span class="label">Blood Group:</span> <span class="value">${pat.bloodGroup}</span></div>
+          <div class="row"><span class="label">Address:</span> <span class="value">${pat.address || 'N/A'}</span></div>
+          <div class="row"><span class="label">Emergency Contact:</span> <span class="value">${pat.emergencyContactName || 'N/A'} (${pat.emergencyContactPhone || 'N/A'})</span></div>
+          
+          <h2>Clinical Notes</h2>
+          <div class="notes">${pat.clinicalNotes || 'No persistent clinical notes recorded.'}</div>
+          
+          <h2>Visit History</h2>
+          ${patHistory.length > 0 ? `
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Doctor</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${patHistory.map(apt => `
+                  <tr>
+                    <td>${new Date(apt.dateTime).toLocaleDateString()} ${new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                    <td>${apt.doctorName || '-'}</td>
+                    <td>${apt.type || '-'}</td>
+                    <td>${apt.status || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="font-size: 14px; color: #64748b;">No visits recorded.</p>'}
+          
+          <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 20px;">
+            Confidential Medical Record. Generated on ${new Date().toLocaleString()}
+          </div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   // Change Appointment Status
   const updateAppointmentStatus = (id: string, newStatus: 'Pending' | 'Confirmed' | 'Completed' | 'Cancelled') => {
     const targetApt = appointments.find(a => a.id === id);
@@ -728,6 +822,13 @@ export default function App() {
       );
     });
   }, [appointments, appointmentSearchQuery, ledgerDocFilterId]);
+
+  if (!isAuthenticated) {
+    return <LandingPage onLogin={(role) => {
+      setUserRole(role);
+      setIsAuthenticated(true);
+    }} />;
+  }
 
   return (
     <div className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
@@ -890,6 +991,15 @@ export default function App() {
             title="Toggle Application Theme Mode (Light / Dark)"
           >
             {darkMode ? <Sun className="h-4.5 w-4.5 text-amber-500 shrink-0" /> : <Moon className="h-4.5 w-4.5 text-indigo-600 shrink-0" />}
+          </button>
+          
+          <button
+            onClick={() => { setIsAuthenticated(false); }}
+            className="p-2 bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-400 rounded-lg transition-colors border border-rose-200 dark:border-rose-900 flex items-center justify-center cursor-pointer shadow-xs font-semibold text-xs gap-1"
+            title="Sign Out"
+          >
+            <LogOut className="h-4.5 w-4.5 shrink-0" />
+            <span className="hidden lg:inline ml-1 font-mono uppercase tracking-widest text-[9px]">Exit</span>
           </button>
 
           <div className="hidden md:block text-right text-xs">
@@ -1572,7 +1682,7 @@ export default function App() {
                         </div>
                         <div className="flex items-center space-x-3">
                           <button
-                            onClick={() => window.print()}
+                            onClick={() => printPatientSummary(pat)}
                             className="flex items-center gap-1 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/50 dark:hover:bg-teal-900/60 text-teal-705 dark:text-teal-450 border border-teal-200 dark:border-teal-800 text-[11px] font-mono uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
                             title="Trigger system browser print view"
                           >
@@ -1600,13 +1710,13 @@ export default function App() {
                           <div className="flex flex-wrap border-b border-slate-150 dark:border-slate-850 gap-4 text-xs font-mono pb-2">
                             <button
                               onClick={() => setDetailTab('info')}
-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-205'}`}
+                              className={getTabClass(detailTab === 'info')}
                             >
                               General Information
                             </button>
                             <button
                               onClick={() => setDetailTab('history')}
-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+                              className={getTabClass(detailTab === 'history')}
                             >
                               <span>Patient Visit History</span>
                               <span className="bg-slate-100 dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-600 dark:text-slate-300">
@@ -1615,20 +1725,28 @@ export default function App() {
                             </button>
                             <button
                               onClick={() => setDetailTab('vitals')}
-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'vitals' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+                              className={getTabClass(detailTab === 'vitals')}
                             >
                               Clinical Vitals Chart
                             </button>
                             <button
                               onClick={() => setDetailTab('age-trend')}
-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1 ${detailTab === 'age-trend' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+                              className={getTabClass(detailTab === 'age-trend')}
                             >
                               Age Trend
                             </button>
                           </div>
 
-                          {detailTab === 'info' ? (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                          <AnimatePresence mode="wait">
+                            <motion.div
+                              key={detailTab}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              transition={{ duration: 0.15 }}
+                            >
+                              {detailTab === 'info' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                               <div className="space-y-1.5">
                                 <p className="text-slate-405 dark:text-slate-500 font-mono uppercase tracking-wider font-semibold text-[10px] mb-1">Demographics & Contact</p>
                                 <div className="space-y-1.5 text-slate-650 dark:text-slate-300">
@@ -1698,6 +1816,8 @@ export default function App() {
                               </div>
                             );
                           })()}
+                            </motion.div>
+                          </AnimatePresence>
                         </div>
                       </div>
                     </motion.div>
@@ -1982,7 +2102,7 @@ export default function App() {
                       {/* Persistent Clinical Notes Area */}
                       <div className="col-span-1 md:col-span-2 space-y-1.5 font-sans">
                         <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider font-mono">
-                          Persistent Clinical Notes / Diagnoses
+                          Persistent Clinical Notes / Diagnoses <span className="text-rose-500">*</span>
                         </label>
                         <textarea
                           id="patient-form-notes-area"
@@ -1991,8 +2111,11 @@ export default function App() {
                           onChange={handleInputChange}
                           placeholder="Enter persistent medical remarks, specialist references, or diagnoses for this patient..."
                           rows={3}
-                          className="w-full px-3 py-2 text-sm border border-slate-350 bg-slate-50 focus:bg-white rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 font-sans transition placeholder-slate-400"
+                          className={`w-full px-3 py-2 text-sm border bg-slate-50 focus:bg-white rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-teal-500 font-sans transition placeholder-slate-400 ${formErrors.clinicalNotes ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-350'}`}
                         />
+                        {formErrors.clinicalNotes && (
+                          <p className="text-[10px] text-rose-600 font-semibold">{formErrors.clinicalNotes}</p>
+                        )}
                       </div>
 
                     </div>
@@ -2216,7 +2339,7 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center space-x-3">
                                   <button
-                                    onClick={() => window.print()}
+                                    onClick={() => printPatientSummary(pat)}
                                     className="flex items-center gap-1 bg-teal-900/30 hover:bg-teal-900/60 text-teal-400 border border-teal-800 text-[11px] font-mono uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
                                     title="Trigger system browser print view"
                                   >
@@ -2237,13 +2360,13 @@ export default function App() {
                               <div className="flex flex-wrap border-b border-slate-800 gap-4 text-xs font-mono pb-2">
                                 <button
                                   onClick={() => setDetailTab('info')}
-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                  className={getTabClass(detailTab === 'info')}
                                 >
                                   General Information
                                 </button>
                                 <button
                                   onClick={() => setDetailTab('history')}
-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                  className={getTabClass(detailTab === 'history')}
                                 >
                                   <span>Patient Visit History</span>
                                   <span className="bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-300">
@@ -2252,27 +2375,35 @@ export default function App() {
                                 </button>
                                 <button
                                   onClick={() => setDetailTab('vitals')}
-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'vitals' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                  className={getTabClass(detailTab === 'vitals')}
                                 >
                                   Clinical Vitals Chart
                                 </button>
                                 <button
                                   onClick={() => setDetailTab('age-trend')}
-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'age-trend' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                  className={getTabClass(detailTab === 'age-trend')}
                                 >
                                   Age Trend
                                 </button>
                                 <button
                                   onClick={() => setDetailTab('invoices')}
-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                  className={getTabClass(detailTab === 'invoices')}
                                 >
                                   Patient Invoices
                                 </button>
                               </div>
                               
-                              {detailTab === 'info' ? (
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                              <AnimatePresence mode="wait">
+                                <motion.div
+                                  key={detailTab}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: -10 }}
+                                  transition={{ duration: 0.15 }}
+                                >
+                                  {detailTab === 'info' ? (
+                                    <div className="space-y-4">
+                                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                     <div>
                                       <span className="text-slate-400 block font-mono">Age (DOB)</span>
                                       <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
@@ -2459,6 +2590,8 @@ export default function App() {
                                   </div>
                                 );
                               })()}
+                                </motion.div>
+                              </AnimatePresence>
                             </div>
                           </div>
                         </motion.div>
@@ -2487,9 +2620,19 @@ export default function App() {
 
                         <div className="md:col-span-3 flex flex-col justify-between">
                           <div className="space-y-4">
-                            <div className="flex items-center space-x-2">
-                              <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse"></span>
-                              <div className="text-xs font-mono tracking-widest text-teal-400 uppercase">My Verified Hospital Identity Profile</div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse"></span>
+                                <div className="text-xs font-mono tracking-widest text-teal-400 uppercase">My Verified Hospital Identity Profile</div>
+                              </div>
+                              <button
+                                onClick={() => printPatientSummary(pat)}
+                                className="flex items-center gap-1 bg-teal-900/30 hover:bg-teal-900/60 text-teal-400 border border-teal-800 text-[11px] font-mono uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
+                                title="Print My Clinical Summary"
+                              >
+                                <Printer className="h-3.5 w-3.5" />
+                                <span>Print Summary</span>
+                              </button>
                             </div>
                             <h4 className="text-xl font-extrabold">{pat.name} <span className="text-slate-400 font-mono font-normal">[{pat.id}]</span></h4>
 
@@ -2497,13 +2640,13 @@ export default function App() {
                             <div className="flex border-b border-slate-800 gap-4 text-xs font-mono pb-2">
                               <button
                                 onClick={() => setDetailTab('info')}
-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                className={getTabClass(detailTab === 'info')}
                               >
                                 My Demographic Card
                               </button>
                               <button
                                 onClick={() => setDetailTab('history')}
-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                className={getTabClass(detailTab === 'history')}
                               >
                                 <span>My Complete Visit History</span>
                                 <span className="bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-300">
@@ -2512,20 +2655,28 @@ export default function App() {
                               </button>
                               <button
                                 onClick={() => setDetailTab('vitals')}
-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'vitals' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                className={getTabClass(detailTab === 'vitals')}
                               >
                                 My Clinical Vitals Chart
                               </button>
                               <button
                                 onClick={() => setDetailTab('invoices')}
-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+                                className={getTabClass(detailTab === 'invoices')}
                               >
                                 My Patient Invoices
                               </button>
                             </div>
                             
-                            {detailTab === 'info' ? (
-                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                            <AnimatePresence mode="wait">
+                              <motion.div
+                                key={detailTab}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                transition={{ duration: 0.15 }}
+                              >
+                                {detailTab === 'info' ? (
+                                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                 <div>
                                   <span className="text-slate-400 block font-mono">My Age (DOB)</span>
                                   <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
@@ -2694,6 +2845,8 @@ export default function App() {
                                 </div>
                               );
                             })()}
+                              </motion.div>
+                            </AnimatePresence>
                           </div>
                         </div>
                       </div>

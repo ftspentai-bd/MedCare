@@ -266,6 +266,7 @@ export default function AppointmentCalendar({
                               onMouseLeave={() => setHoveredApt(null)}
                               className={`w-full text-left truncate text-[9px] font-bold px-1.5 py-0.5 rounded transition cursor-pointer text-ellipsis overflow-hidden shrink-0 block ${pillBg} border border-black/10`}
                               id={`calendar-event-${apt.id}`}
+                              title={`Patient: ${apt.patientName} | Specialist: ${apt.doctorName}`}
                             >
                               {userRole === 'patient' ? apt.doctorName : apt.patientName}
                             </motion.button>

@@ -1,0 +1,242 @@
+1603-                        <div className="flex items-center space-x-3">
+1604-                          <button
+1605-                            onClick={() => window.print()}
+1606-                            className="flex items-center gap-1 bg-teal-50 hover:bg-teal-100 dark:bg-teal-950/50 dark:hover:bg-teal-900/60 text-teal-705 dark:text-teal-450 border border-teal-200 dark:border-teal-800 text-[11px] font-mono uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
+1607-                            title="Trigger system browser print view"
+1608-                          >
+1609-                            <Printer className="h-3.5 w-3.5" />
+1610-                            <span>Print Summary</span>
+1611-                          </button>
+1612-                          <button 
+1613-                            onClick={() => setSelectedPatientId(null)}
+1614-                            className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-350 text-xs uppercase tracking-wider font-semibold cursor-pointer"
+1615-                          >
+1616-                            Hide details (X)
+1617-                          </button>
+1618-                        </div>
+1619-                      </div>
+1620-
+1621-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-xs" id={`expanded-panel-grid-${pat.id}`}>
+1622-                        {/* Avatar Photo Camera Section */}
+1623-                        <div className="col-span-1 border-r border-slate-150 dark:border-slate-800/80 pr-2">
+1624-                          <p className="text-slate-405 dark:text-slate-500 font-mono uppercase tracking-wider font-semibold text-[10px] mb-3 text-center">Patient Avatar Identity</p>
+1625-                          <PatientCameraAvatar patient={pat} onSaveAvatar={updatePatientAvatar} />
+1626-                        </div>
+1627-
+1628-                        <div className="md:col-span-3 flex flex-col justify-between space-y-4">
+1629-                          {/* Tab Headers */}
+1630-                          <div className="flex flex-wrap border-b border-slate-150 dark:border-slate-850 gap-4 text-xs font-mono pb-2">
+1631-                            <button
+1632-                              onClick={() => setDetailTab('info')}
+1633:                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-205'}`}
+1634-                            >
+1635-                              General Information
+1636-                            </button>
+1637-                            <button
+1638-                              onClick={() => setDetailTab('history')}
+1639-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+1640-                            >
+1641-                              <span>Patient Visit History</span>
+1642-                              <span className="bg-slate-100 dark:bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-600 dark:text-slate-300">
+1643-                                {appointments.filter(a => a.patientId === pat.id && a.status === 'Completed').length}
+1644-                              </span>
+1645-                            </button>
+1646-                            <button
+1647-                              onClick={() => setDetailTab('vitals')}
+1648-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'vitals' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+1649-                            >
+1650-                              Clinical Vitals Chart
+1651-                            </button>
+1652-                            <button
+1653-                              onClick={() => setDetailTab('age-trend')}
+1654-                              className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1 ${detailTab === 'age-trend' ? 'border-b-2 border-teal-600 text-teal-605 font-bold' : 'text-slate-400 hover:text-slate-655 dark:hover:text-slate-205'}`}
+1655-                            >
+1656-                              Age Trend
+1657-                            </button>
+1658-                          </div>
+1659-
+1660:                          {detailTab === 'info' ? (
+1661-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+1662-                              <div className="space-y-1.5">
+1663-                                <p className="text-slate-405 dark:text-slate-500 font-mono uppercase tracking-wider font-semibold text-[10px] mb-1">Demographics & Contact</p>
+1664-                                <div className="space-y-1.5 text-slate-650 dark:text-slate-300">
+1665-                                  <p><strong className="text-slate-800 dark:text-slate-200">Date of Birth:</strong> {pat.dateOfBirth} ({calculateAge(pat.dateOfBirth)} yrs)</p>
+1666-                                  <p><strong className="text-slate-800 dark:text-slate-200">Gender:</strong> {pat.gender}</p>
+1667-                                  <p><strong className="text-slate-800 dark:text-slate-200">Blood Group:</strong> {pat.bloodGroup}</p>
+1668-                                  <p><strong className="text-slate-800 dark:text-slate-200">Primary Contact:</strong> {pat.contact}</p>
+1669-                                </div>
+1670-                              </div>
+1671-
+1672-                              <div className="space-y-1.5">
+1673-                                <p className="text-slate-405 dark:text-slate-500 font-mono uppercase tracking-wider font-semibold text-[10px] mb-1">Emergency Coordinates</p>
+1674-                                <div className="space-y-1.5 text-slate-650 dark:text-slate-300">
+1675-                                  <p><strong className="text-slate-800 dark:text-slate-200">Responsible Guardian:</strong> {pat.emergencyContactName || 'N/A'}</p>
+1676-                                  <p><strong className="text-slate-800 dark:text-slate-200">Emergency Phone:</strong> {pat.emergencyContactPhone || 'N/A'}</p>
+1677-                                </div>
+1678-                              </div>
+1679-
+1680-                              <div className="space-y-1.5">
+--
+2240-                          <div className="lg:col-span-3 flex flex-col justify-between">
+2241-                            <div className="space-y-4">
+2242-                              <div className="flex items-center justify-between">
+2243-                                <div className="flex items-center space-x-2">
+2244-                                  <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse"></span>
+2245-                                  <div className="text-xs font-mono tracking-widest text-teal-400 uppercase">Interactive Demographics Drawer</div>
+2246-                                </div>
+2247-                                <div className="flex items-center space-x-3">
+2248-                                  <button
+2249-                                    onClick={() => window.print()}
+2250-                                    className="flex items-center gap-1 bg-teal-900/30 hover:bg-teal-900/60 text-teal-400 border border-teal-800 text-[11px] font-mono uppercase font-bold tracking-wider px-3 py-1.5 rounded-lg transition-all cursor-pointer shadow-xs"
+2251-                                    title="Trigger system browser print view"
+2252-                                  >
+2253-                                    <Printer className="h-3.5 w-3.5" />
+2254-                                    <span>Print Summary</span>
+2255-                                  </button>
+2256-                                  <button 
+2257-                                    onClick={() => setSelectedPatientId(null)}
+2258-                                    className="text-slate-400 hover:text-white text-xs font-mono uppercase bg-slate-850 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+2259-                                  >
+2260-                                    Hide Panel [x]
+2261-                                  </button>
+2262-                                </div>
+2263-                              </div>
+2264-                              <h4 className="text-lg font-bold">{pat.name} <span className="text-slate-400 font-mono font-normal">[{pat.id}]</span></h4>
+2265-
+2266-                              {/* Tab Headers */}
+2267-                              <div className="flex flex-wrap border-b border-slate-800 gap-4 text-xs font-mono pb-2">
+2268-                                <button
+2269-                                  onClick={() => setDetailTab('info')}
+2270:                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2271-                                >
+2272-                                  General Information
+2273-                                </button>
+2274-                                <button
+2275-                                  onClick={() => setDetailTab('history')}
+2276-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2277-                                >
+2278-                                  <span>Patient Visit History</span>
+2279-                                  <span className="bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-300">
+2280-                                    {appointments.filter(a => a.patientId === pat.id && a.status === 'Completed').length}
+2281-                                  </span>
+2282-                                </button>
+2283-                                <button
+2284-                                  onClick={() => setDetailTab('vitals')}
+2285-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'vitals' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2286-                                >
+2287-                                  Clinical Vitals Chart
+2288-                                </button>
+2289-                                <button
+2290-                                  onClick={() => setDetailTab('age-trend')}
+2291-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'age-trend' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2292-                                >
+2293-                                  Age Trend
+2294-                                </button>
+2295-                                <button
+2296-                                  onClick={() => setDetailTab('invoices')}
+2297-                                  className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2298-                                >
+2299-                                  Patient Invoices
+2300-                                </button>
+2301-                              </div>
+2302-                              
+2303:                              {detailTab === 'info' ? (
+2304-                                <div className="space-y-4">
+2305-                                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+2306-                                    <div>
+2307-                                      <span className="text-slate-400 block font-mono">Age (DOB)</span>
+2308-                                      <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+2309-                                    </div>
+2310-                                    <div>
+2311-                                      <span className="text-slate-400 block font-mono">Blood Classification</span>
+2312-                                      <span className="font-semibold text-slate-200 font-mono">{pat.bloodGroup}</span>
+2313-                                    </div>
+2314-                                    <div>
+2315-                                      <span className="text-slate-400 block font-mono">Address Coordinates</span>
+2316-                                      <span className="font-semibold text-slate-200 block truncate max-w-[200px]" title={pat.address}>{pat.address || 'N/A'}</span>
+2317-                                    </div>
+2318-                                    <div>
+2319-                                      <span className="text-slate-400 block font-mono font-sans inline-block">Emergency Representative</span>
+2320-                                      <span className="font-semibold text-slate-200 block truncate max-w-[200px]">{pat.emergencyContactName || 'N/A'} - {pat.emergencyContactPhone || 'N/A'}</span>
+2321-                                    </div>
+2322-                                  </div>
+2323-                                  <div className="border-t border-slate-200 dark:border-slate-800 pt-3 text-xs">
+--
+2500-                /* Patient Portal Immersive Mode view */
+2501-                (() => {
+2502-                  const pat = patients.find(p => p.id === actingPatientId);
+2503-                  if (!pat) return (
+2504-                    <div className="py-12 text-center text-slate-400 dark:text-slate-600 bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-850 rounded-xl">
+2505-                      <p className="font-semibold text-sm">Patient Record Not Located</p>
+2506-                      <p className="text-xs mt-1">Please select an active identity profile from the top-bar dropdown element to proceed.</p>
+2507-                    </div>
+2508-                  );
+2509-                  return (
+2510-                    <div className="space-y-6">
+2511-                      <div className="bg-slate-900 border border-slate-805 dark:border-slate-800 text-white rounded-xl p-6 shadow-md grid grid-cols-1 md:grid-cols-4 gap-6 transition-colors font-sans">
+2512-                        {/* Interactive Avatar Area */}
+2513-                        <div className="col-span-1 md:border-r border-slate-800 pr-2 pb-4 md:pb-0">
+2514-                          <p className="text-slate-400 font-mono uppercase tracking-wider font-semibold text-[10px] mb-3 text-center">My Avatar Identity</p>
+2515-                          <PatientCameraAvatar patient={pat} onSaveAvatar={updatePatientAvatar} />
+2516-                        </div>
+2517-
+2518-                        <div className="md:col-span-3 flex flex-col justify-between">
+2519-                          <div className="space-y-4">
+2520-                            <div className="flex items-center space-x-2">
+2521-                              <span className="h-2 w-2 rounded-full bg-teal-500 animate-pulse"></span>
+2522-                              <div className="text-xs font-mono tracking-widest text-teal-400 uppercase">My Verified Hospital Identity Profile</div>
+2523-                            </div>
+2524-                            <h4 className="text-xl font-extrabold">{pat.name} <span className="text-slate-400 font-mono font-normal">[{pat.id}]</span></h4>
+2525-
+2526-                            {/* Tab Headers */}
+2527-                            <div className="flex border-b border-slate-800 gap-4 text-xs font-mono pb-2">
+2528-                              <button
+2529-                                onClick={() => setDetailTab('info')}
+2530:                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer ${detailTab === 'info' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2531-                              >
+2532-                                My Demographic Card
+2533-                              </button>
+2534-                              <button
+2535-                                onClick={() => setDetailTab('history')}
+2536-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'history' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2537-                              >
+2538-                                <span>My Complete Visit History</span>
+2539-                                <span className="bg-slate-800 text-[10px] px-1.5 py-0.5 rounded-full font-sans text-slate-300">
+2540-                                  {appointments.filter(a => a.patientId === pat.id && a.status === 'Completed').length}
+2541-                                </span>
+2542-                              </button>
+2543-                              <button
+2544-                                onClick={() => setDetailTab('vitals')}
+2545-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'vitals' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2546-                              >
+2547-                                My Clinical Vitals Chart
+2548-                              </button>
+2549-                              <button
+2550-                                onClick={() => setDetailTab('invoices')}
+2551-                                className={`pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${detailTab === 'invoices' ? 'border-b-2 border-teal-500 text-teal-400 font-bold' : 'text-slate-405 hover:text-white'}`}
+2552-                              >
+2553-                                My Patient Invoices
+2554-                              </button>
+2555-                            </div>
+2556-                            
+2557:                            {detailTab === 'info' ? (
+2558-                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+2559-                                <div>
+2560-                                  <span className="text-slate-400 block font-mono">My Age (DOB)</span>
+2561-                                  <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+2562-                                </div>
+2563-                                <div>
+2564-                                  <span className="text-slate-400 block font-mono">Blood Classification</span>
+2565-                                  <span className="font-semibold text-slate-200 font-mono">{pat.bloodGroup}</span>
+2566-                                </div>
+2567-                                <div>
+2568-                                  <span className="text-slate-400 block font-mono">Address Coordinates</span>
+2569-                                  <span className="font-semibold text-slate-200 block truncate max-w-[200px]" title={pat.address}>{pat.address || 'N/A'}</span>
+2570-                                </div>
+2571-                                <div>
+2572-                                  <span className="text-slate-400 block font-mono font-sans inline-block">Emergency Representative</span>
+2573-                                  <span className="font-semibold text-slate-200 block truncate max-w-[200px]">{pat.emergencyContactName || 'N/A'} - {pat.emergencyContactPhone || 'N/A'}</span>
+2574-                                </div>
+2575-                              </div>
+2576-                            ) : detailTab === 'vitals' ? (
+2577-                              <PatientVitalsChart patientId={pat.id} appointments={appointments} />

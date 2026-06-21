@@ -7,7 +7,8 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  Legend 
+  Legend,
+  ReferenceArea
 } from 'recharts';
 import { Appointment, Patient } from '../types';
 import { Heart, Activity, Thermometer, Plus, X } from 'lucide-react';
@@ -191,6 +192,10 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+              <ReferenceArea {...({ y1: 90, y2: 120, fill: "#10b981", fillOpacity: 0.08 } as any)} /> {/* Safe Systolic range */}
+              <ReferenceArea {...({ y1: 120, y2: 140, fill: "#f59e0b", fillOpacity: 0.08 } as any)} /> {/* elevated border Systolic range */}
+              <ReferenceArea {...({ y1: 140, y2: 200, fill: "#f43f5e", fillOpacity: 0.08 } as any)} /> {/* Hypertension range */}
+              <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.05 } as any)} /> {/* Safe Diastolic range */}
               <XAxis 
                 dataKey="displayDate" 
                 stroke="#71717a" 

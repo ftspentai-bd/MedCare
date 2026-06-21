@@ -203,6 +203,13 @@ export default function AppointmentCalendar({
                   const dayApts = getDayAppointments(day);
                   const isToday = now.getFullYear() === currentYear && now.getMonth() === currentMonth && now.getDate() === day;
 
+                  const timeSlotDocs: Record<number, Set<string>> = {};
+                  dayApts.forEach(a => {
+                    const time = new Date(a.dateTime).getTime();
+                    if (!timeSlotDocs[time]) timeSlotDocs[time] = new Set();
+                    timeSlotDocs[time].add(a.doctorId);
+                  });
+
                   return (
                     <div 
                       key={`day-${day}`}
@@ -234,12 +241,17 @@ export default function AppointmentCalendar({
                           const isPending = apt.status === 'Pending';
                           const isCancelled = apt.status === 'Cancelled';
                           const isCompleted = apt.status === 'Completed';
+                          const isOverlap = timeSlotDocs[new Date(apt.dateTime).getTime()].size > 1;
 
                           // Status colors for pills
                           let pillBg = 'bg-teal-550 bg-teal-500 text-white';
-                          if (isPending) pillBg = 'bg-amber-500 text-white';
-                          if (isCancelled) pillBg = 'bg-slate-350 text-slate-700 opacity-60 line-through';
-                          if (isCompleted) pillBg = 'bg-slate-600 text-slate-200';
+                          if (isOverlap) {
+                            pillBg = 'bg-rose-500 text-white border-rose-600';
+                          } else {
+                            if (isPending) pillBg = 'bg-amber-500 text-white';
+                            if (isCancelled) pillBg = 'bg-slate-350 text-slate-700 opacity-60 line-through';
+                            if (isCompleted) pillBg = 'bg-slate-600 text-slate-200';
+                          }
 
                           return (
                             <motion.button
@@ -280,7 +292,7 @@ export default function AppointmentCalendar({
             </AnimatePresence>
           </div>
 
-          <div className="grid grid-cols-4 gap-3 text-[10px] font-mono mt-3.5 text-slate-450 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-3">
+          <div className="grid grid-cols-5 gap-3 text-[10px] font-mono mt-3.5 text-slate-450 dark:text-slate-500 border-t border-slate-100 dark:border-slate-800 pt-3">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded bg-amber-500 inline-block"></span>
               <span>Pending Slots</span>
@@ -296,6 +308,10 @@ export default function AppointmentCalendar({
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded bg-slate-350 inline-block opacity-60"></span>
               <span>Cancelled Booking</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded bg-rose-500 inline-block"></span>
+              <span>Conflict/Overlap</span>
             </div>
           </div>
 

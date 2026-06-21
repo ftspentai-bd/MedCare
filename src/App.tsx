@@ -37,7 +37,12 @@ import {
   Video,
   VideoOff,
   Printer,
-  LogOut
+  LogOut,
+  Minus,
+  ArrowUp,
+  ArrowDown,
+  AlertTriangle,
+  AlertOctagon
 } from 'lucide-react';
 import { initialPatients, pillars, dbSchemaTables, apiEndpoints, initialDoctors, initialAppointments } from './data';
 import { Patient, ViewType, Appointment, Doctor } from './types';
@@ -45,9 +50,12 @@ import PatientCameraAvatar from './components/PatientCameraAvatar';
 import DoctorDashboard from './components/DoctorDashboard';
 import PatientDashboard from './components/PatientDashboard';
 import PatientVitalsChart from './components/PatientVitalsChart';
+import { ConsultationReminder } from './components/ConsultationReminder';
 import PatientAgeTrendChart from './components/PatientAgeTrendChart';
 import AppointmentCalendar from './components/AppointmentCalendar';
 import StarRatingDisplay from './components/StarRatingDisplay';
+import { QuickNotesFAB } from './components/QuickNotesFAB';
+import { PatientMedications } from './components/PatientMedications';
 import PaymentModule from './components/PaymentModule';
 import LandingPage from './components/LandingPage';
 import { motion, AnimatePresence } from 'motion/react';
@@ -76,6 +84,21 @@ export const hasHealthAlert = (patient: any): boolean => {
     }
   }
   return false;
+};
+
+export const getPatientPriorityScore = (p: any): number => {
+  let score = 0;
+  if (p.taskStatus === 'Urgent') score += 100;
+  if (p.vitals && p.vitals.length > 0) {
+    const latest = p.vitals[p.vitals.length - 1];
+    if (latest.bpSys >= 140 || latest.bpSys <= 90) score += 50;
+    else if (latest.bpSys >= 130) score += 20;
+    if (latest.bpDia >= 90 || latest.bpDia <= 60) score += 50;
+    else if (latest.bpDia >= 85) score += 20;
+    if (latest.heartRate >= 100 || latest.heartRate <= 50) score += 30;
+    else if (latest.heartRate >= 90) score += 10;
+  }
+  return score;
 };
 
 export const getSysColor = (sys: number) => {
@@ -202,6 +225,74 @@ export default function App() {
 
   // Patient domain state
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
+
+  // Activities state
+  const [activities, setActivities] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('care_sync_activities');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return [
+      { id: 'act-init-1', type: 'system', message: 'Hospital database systems online and synced.', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+      { id: 'act-init-2', type: 'appointment', message: 'Default clinical appointment calendars verified.', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    ];
+  });
+
+  const logActivity = (type: string, message: string) => {
+    const newActivity = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      type,
+      message,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setActivities(prev => {
+      const updated = [newActivity, ...prev].slice(0, 50);
+      try {
+        localStorage.setItem('care_sync_activities', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  // Informal quick notes state
+  const [quickNotes, setQuickNotes] = useState<Record<string, string[]>>(() => {
+    try {
+      const saved = localStorage.getItem('care_sync_quick_notes');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  const handleSaveQuickNote = (patId: string, noteText: string) => {
+    const timestamp = new Date().toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+    const formattedNote = `${timestamp}: ${noteText}`;
+    setQuickNotes(prev => {
+      const updated = {
+        ...prev,
+        [patId]: [...(prev[patId] || []), formattedNote]
+      };
+      try {
+        localStorage.setItem('care_sync_quick_notes', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    const patientName = patients.find(p => p.id === patId)?.name || 'Patient';
+    logActivity('quick_note', `Added informal session note for patient ${patientName}: "${noteText.substring(0, 30)}${noteText.length > 30 ? '...' : ''}"`);
+  };
+
+  const handleClearQuickNotes = (patId: string) => {
+    setQuickNotes(prev => {
+      const updated = { ...prev };
+      delete updated[patId];
+      try {
+        localStorage.setItem('care_sync_quick_notes', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+    const patientName = patients.find(p => p.id === patId)?.name || 'Patient';
+    logActivity('quick_note', `Cleared informal session notes archive for patient ${patientName}.`);
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
   const [selectedPatientIds, setSelectedPatientIds] = useState<Set<string>>(new Set());
@@ -235,8 +326,8 @@ export default function App() {
     setSelectedPatientIds(new Set());
   };
   
-  // Active status filter state: 'all' | 'urgent' | 'recent'
-  const [statusFilter, setStatusFilter] = useState<'all' | 'urgent' | 'recent'>('all');
+  // Active status filter state: 'all' | 'urgent' | 'recent' | 'priority'
+  const [statusFilter, setStatusFilter] = useState<'all' | 'urgent' | 'recent' | 'priority'>('all');
 
   // Age range filter
   const [ageRange, setAgeRange] = useState<[number, number]>([0, 120]);
@@ -251,6 +342,9 @@ export default function App() {
   const [vitalDia, setVitalDia] = useState(80);
   const [vitalHR, setVitalHR] = useState(72);
   const [vitalTemp, setVitalTemp] = useState(98.6);
+  const [vitalHeight, setVitalHeight] = useState<number | ''>(''); // e.g. cm
+  const [vitalWeight, setVitalWeight] = useState<number | ''>(''); // e.g. kg
+  const [isHistoryLogOpen, setIsHistoryLogOpen] = useState(false);
 
   // Appointment Ledger states
   const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments);
@@ -526,6 +620,7 @@ export default function App() {
         }
         return p;
       }));
+      logActivity('patient', `Updated registry index details for patient ${formValues.name} (${editingPatient.id}).`);
     } else {
       // Handle New Creation
       const uniqueId = `PAT-2026-0${Math.floor(100 + Math.random() * 900)}`;
@@ -535,6 +630,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
       setPatients(prev => [newPatient, ...prev]);
+      logActivity('patient', `Onboarded new patient record: ${formValues.name} (${uniqueId}).`);
     }
 
     resetForm();
@@ -560,10 +656,23 @@ export default function App() {
       return patient.taskStatus === 'Urgent';
     } else if (statusFilter === 'recent') {
       return patient.hasRecentVisit === true;
+    } else if (statusFilter === 'priority') {
+      let tempScore = 0;
+      if (patient.taskStatus === 'Urgent') tempScore += 100;
+      if (patient.vitals && patient.vitals.length > 0) {
+        const latest = patient.vitals[patient.vitals.length - 1];
+        if (latest.bpSys >= 140 || latest.bpSys <= 90) tempScore += 50;
+        if (latest.bpDia >= 90 || latest.bpDia <= 60) tempScore += 50;
+      }
+      return tempScore > 0;
     }
 
     return true; // 'all'
   }).sort((a, b) => {
+    if (statusFilter === 'priority') {
+      return getPatientPriorityScore(b) - getPatientPriorityScore(a); // High score first
+    }
+
     if (urgencySortOrder === 'desc') {
       // Urgent first
       if (a.taskStatus === 'Urgent' && b.taskStatus !== 'Urgent') return -1;
@@ -796,6 +905,63 @@ export default function App() {
   const getTabClass = (isActive: boolean) => 
     `pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${isActive ? 'border-b-2 border-teal-500 text-teal-600 dark:text-teal-400 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`;
 
+  const handleExportHistoryPDF = (pat: Patient) => {
+    const printWindow = window.open('', '', 'height=800,width=800');
+    if (!printWindow) return;
+    
+    const patHistory = appointments.filter(a => a.patientId === pat.id).sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+
+    const receiptHtml = `
+      <html>
+        <head>
+          <title>Full Medical History - ${pat.name}</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+            h1 { text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 20px; font-size: 24px; color: #0f172a; }
+            h2 { font-size: 18px; color: #334155; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+            .label { font-weight: bold; color: #64748b; font-size: 14px; }
+            .value { font-weight: 500; font-size: 14px; text-align: right; }
+            .visit-card { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin-top: 15px; page-break-inside: avoid; }
+            .visit-title { font-weight: bold; font-size: 16px; margin-bottom: 10px; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; }
+            .notes { margin-top: 10px; font-size: 14px; white-space: pre-wrap; font-family: monospace; color: #334155; }
+          </style>
+        </head>
+        <body>
+          <h1>Complete Patient Medical History</h1>
+          
+          <h2>Demographics</h2>
+          <div class="row"><span class="label">Patient Name:</span> <span class="value">${pat.name}</span></div>
+          <div class="row"><span class="label">Patient ID:</span> <span class="value">${pat.id}</span></div>
+          <div class="row"><span class="label">Date of Birth:</span> <span class="value">${pat.dateOfBirth}</span></div>
+          <div class="row"><span class="label">Blood Group:</span> <span class="value">${pat.bloodGroup}</span></div>
+          
+          <h2>Clinical Narrative (Persistent)</h2>
+          <div class="visit-card" style="background-color: #f1f5f9; white-space: pre-wrap;">${pat.clinicalNotes || 'No persistent clinical notes.'}</div>
+          
+          <h2>Recorded Visit History</h2>
+          ${patHistory.length > 0 ? patHistory.map(apt => `
+            <div class="visit-card">
+              <div class="visit-title">${new Date(apt.dateTime).toLocaleDateString()} at ${new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${apt.type} [${apt.status}]</div>
+              <div class="row"><span class="label">Attending Doctor:</span> <span class="value">${apt.doctorName || 'N/A'}</span></div>
+              <div style="margin-top: 15px; font-weight: bold; color: #64748b;">Consultation Notes:</div>
+              <div class="notes">${apt.notes || 'No consultation notes recorded for this visit.'}</div>
+            </div>
+          `).join('') : '<p style="font-size: 14px; color: #64748b;">No visits recorded.</p>'}
+          
+          <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 20px;">
+            Confidential Medical Record. Generated on ${new Date().toLocaleString()}
+          </div>
+        </body>
+      </html>
+    `;
+    printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
   const printPatientSummary = (pat: Patient) => {
     const printWindow = window.open('', '', 'height=800,width=800');
     if (!printWindow) return;
@@ -864,6 +1030,296 @@ export default function App() {
       </html>
     `;
     printWindow.document.write(receiptHtml);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
+  const printAppointmentCalendar = () => {
+    const printWindow = window.open('', '', 'height=800,width=1000');
+    if (!printWindow) return;
+    
+    // Calculate conflicts
+    const timeSlotDocs: Record<string, Set<string>> = {};
+    appointments.forEach(a => {
+      const time = new Date(a.dateTime).getTime();
+      if (!timeSlotDocs[time]) timeSlotDocs[time] = new Set();
+      timeSlotDocs[time].add(a.doctorId);
+    });
+
+    const aptRows = appointments
+      .sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime())
+      .map(apt => {
+        const isConflict = timeSlotDocs[new Date(apt.dateTime).getTime()].size > 1;
+        return `
+          <tr class="${isConflict ? 'conflict-row' : ''}">
+            <td style="font-family: monospace; font-weight: bold;">${apt.id}</td>
+            <td>${apt.patientName} (${apt.patientId})</td>
+            <td>Dr. ${apt.doctorName.replace('Dr. ', '')}</td>
+            <td style="font-family: monospace;">${new Date(apt.dateTime).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'})}</td>
+            <td>
+              <span class="status-badge status-${apt.status.toLowerCase()}">${apt.status}</span>
+              ${isConflict ? '<span class="conflict-badge">Conflict</span>' : ''}
+            </td>
+            <td>${apt.paymentStatus || 'Pending'}</td>
+          </tr>
+        `;
+      }).join('');
+
+    const html = `
+      <html>
+        <head>
+          <title>CareSync Clinical Calendar Report</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
+            .header { border-bottom: 2px solid #0d9488; padding-bottom: 20px; margin-bottom: 30px; }
+            .title { font-size: 24px; font-weight: bold; color: #0f172a; margin: 0; }
+            .subtitle { font-size: 11px; font-family: monospace; color: #64748b; margin: 5px 0 0 0; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+            th { background-color: #f8fafc; font-weight: bold; color: #475569; text-transform: uppercase; font-size: 10.5px; }
+            .conflict-row { background-color: #fff1f2; }
+            .conflict-badge { background-color: #f43f5e; color: white; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; font-family: monospace; margin-left: 5px; }
+            .status-badge { font-size: 9.5px; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-family: monospace; text-transform: uppercase; }
+            .status-pending { background-color: #fef3c7; color: #d97706; }
+            .status-confirmed { background-color: #ccfbf1; color: #0d9488; }
+            .status-completed { background-color: #f1f5f9; color: #475569; }
+            .status-cancelled { background-color: #f3f4f6; color: #9ca3af; text-decoration: line-through; }
+            .meta-info { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">CareSync Clinical Calendar Report</h1>
+            <p class="subtitle">Official Scheduling Ledger & Scheduling Conflict Assessment</p>
+          </div>
+          
+          <div>
+            <h3>Total Registries: ${appointments.length} Consultations</h3>
+            <p style="font-size: 12px; color: #64748b; margin: -10px 0 20px 0;">Time slots with conflicting/overlapping doctor schedules are highlighted in red.</p>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Consult ID</th>
+                <th>Patient</th>
+                <th>Clinician</th>
+                <th>Date & Time</th>
+                <th>Status</th>
+                <th>Billing State</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${aptRows}
+            </tbody>
+          </table>
+
+          <div class="meta-info">
+            <span>Printed: ${new Date().toLocaleString()}</span>
+            <span>CareSync Systems Administration Ledger</span>
+          </div>
+        </body>
+      </html>
+    `;
+    
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
+  const printPatientDirectory = () => {
+    const printWindow = window.open('', '', 'height=800,width=1000');
+    if (!printWindow) return;
+
+    const patRows = patients.map(pat => {
+      return `
+        <tr>
+          <td style="font-family: monospace; font-weight: bold;">${pat.id}</td>
+          <td><strong>${pat.name}</strong></td>
+          <td>${pat.dateOfBirth} (${calculateAge(pat.dateOfBirth)} yrs)</td>
+          <td>${pat.gender}</td>
+          <td style="font-family: monospace; font-weight: bold; text-align: center;">${pat.bloodGroup}</td>
+          <td>${pat.contact}</td>
+          <td><span class="status-badge status-${pat.taskStatus.toLowerCase()}">${pat.taskStatus}</span></td>
+          <td>
+            <span style="font-size:10px; color:#475569;">
+              ${(pat.medications || []).map(m => m.name).join(', ') || 'Atorvastatin, Metformin, Lisinopril'}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const html = `
+      <html>
+        <head>
+          <title>CareSync Registered Patient Directory</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
+            .header { border-bottom: 2px solid #0d9488; padding-bottom: 20px; margin-bottom: 30px; }
+            .title { font-size: 24px; font-weight: bold; color: #0f172a; margin: 0; }
+            .subtitle { font-size: 11px; font-family: monospace; color: #64748b; margin: 5px 0 0 0; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+            th { background-color: #f8fafc; font-weight: bold; color: #475569; text-transform: uppercase; font-size: 9.5px; }
+            .status-badge { font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-family: monospace; text-transform: uppercase; }
+            .status-urgent { background-color: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+            .status-routine { background-color: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+            .meta-info { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">CareSync Registered Patient Directory</h1>
+            <p class="subtitle">Official Demographics Index & Medication Retainer Pool</p>
+          </div>
+          
+          <div>
+            <h3>Total Pool Size: ${patients.length} Registered Patients</h3>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Full Name</th>
+                <th>Age / DOB</th>
+                <th>Gender</th>
+                <th>Blood</th>
+                <th>Contact Phone</th>
+                <th>Triage Priority</th>
+                <th>Current Medications Excerpt</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${patRows}
+            </tbody>
+          </table>
+
+          <div class="meta-info">
+            <span>Printed: ${new Date().toLocaleString()}</span>
+            <span>CareSync Systems Hospital Database Ledger</span>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
+  };
+
+  const printDoctorDashboard = () => {
+    const printWindow = window.open('', '', 'height=800,width=1000');
+    if (!printWindow) return;
+
+    const docRows = (doctors || initialDoctors).map(doc => {
+      const currentStatus = doc.isAvailable !== false;
+      const docApts = appointments.filter(a => a.doctorId === doc.id);
+      return `
+        <tr>
+          <td style="font-weight: bold; font-family: monospace;">${doc.id}</td>
+          <td><strong>${doc.name}</strong></td>
+          <td>${doc.specialization}</td>
+          <td style="font-family: monospace; font-size:10px;">${doc.department}</td>
+          <td>$${doc.consultationFee}</td>
+          <td><span class="status-badge ${currentStatus ? 'status-avail' : 'status-busy'}">${currentStatus ? 'Available' : 'Busy'}</span></td>
+          <td style="font-family: monospace; text-align: center;">${docApts.length}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const urgentCounts = patients.filter(p => p.taskStatus === 'Urgent').length;
+    const pendingApts = appointments.filter(a => a.status === 'Pending').length;
+    const completedApts = appointments.filter(a => a.status === 'Completed').length;
+
+    const html = `
+      <html>
+        <head>
+          <title>CareSync Clinical Operations Hub Report</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; line-height: 1.5; }
+            .header { border-bottom: 2px solid #0d9488; padding-bottom: 20px; margin-bottom: 30px; }
+            .title { font-size: 24px; font-weight: bold; color: #0f172a; margin: 0; }
+            .subtitle { font-size: 11px; font-family: monospace; color: #64748b; margin: 5px 0 0 0; text-transform: uppercase; }
+            
+            .stats-grid { display: flex; justify-content: space-between; margin-bottom: 30px; gap: 15px; }
+            .stat-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; flex: 1; text-align: center; background-color: #f8fafc; }
+            .stat-value { font-size: 20px; font-weight: bold; color: #0f172a; margin-top: 5px; }
+            .stat-label { font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold; }
+
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 11px; }
+            th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+            th { background-color: #f8fafc; font-weight: bold; color: #475569; text-transform: uppercase; font-size: 9.5px; }
+            
+            .status-badge { font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 4px; font-family: monospace; text-transform: uppercase; }
+            .status-avail { background-color: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+            .status-busy { background-color: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+            
+            .meta-info { display: flex; justify-content: space-between; font-size: 11px; color: #64748b; margin-top: 30px; border-top: 1px solid #e2e8f0; padding-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">CareSync Clinical Operations Hub Report</h1>
+            <p class="subtitle">Institutional Dashboard Core & Staff Coverage Status</p>
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-label">Urgent Action Cases</span>
+              <div class="stat-value" style="color: #dc2626;">${urgentCounts} Alerts</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Pending Verifications</span>
+              <div class="stat-value">${pendingApts} Slots</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Completed Consults</span>
+              <div class="stat-value">${completedApts} Done</div>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">On-Duty Specialists</span>
+              <div class="stat-value">${(doctors || initialDoctors).length} Core</div>
+            </div>
+          </div>
+
+          <div>
+            <h3 style="margin: 0 0 10px 0;">Clinics & Specialists Roster Coverage</h3>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Specialist ID</th>
+                <th>Full Name</th>
+                <th>Classification Specialty</th>
+                <th>OPD Wing / Location</th>
+                <th>Consultation Cost</th>
+                <th>Coverage Status</th>
+                <th style="text-align: center;">Assigned Slots</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${docRows}
+            </tbody>
+          </table>
+
+          <div class="meta-info">
+            <span>Printed: ${new Date().toLocaleString()}</span>
+            <span>CareSync Systems Operations Console Ledger</span>
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
     printWindow.document.close();
     setTimeout(() => {
       printWindow.print();
@@ -980,6 +1436,9 @@ export default function App() {
       }
       return apt;
     }));
+    if (targetApt) {
+      logActivity('appointment', `Consultation ${id} (${targetApt.patientName}) status transitioned to "${newStatus}".`);
+    }
   };
 
   // Complete Stripe checkout payment & record transaction
@@ -1021,10 +1480,23 @@ export default function App() {
     } catch (e) {
       console.error("Error storing sandbox payment transaction:", e);
     }
+    logActivity('appointment', `Processed $${receipt.amount} Stripe payment for consultation ${activeCheckoutApt.id} (${activeCheckoutApt.patientName}).`);
   };
 
   const updatePatient = (patientId: string, updates: Partial<Patient>) => {
+    const targetPat = patients.find(p => p.id === patientId);
     setPatients(prev => prev.map(p => p.id === patientId ? { ...p, ...updates } : p));
+    
+    const patName = targetPat?.name || 'Patient';
+    if (updates.medications) {
+      logActivity('medication', `Prescription inventory adjusted for patient ${patName} (${patientId}).`);
+    } else if (updates.adherenceLogs) {
+      const latestLog = updates.adherenceLogs[updates.adherenceLogs.length - 1];
+      const medName = (updates.medications || targetPat?.medications || []).find(m => m.id === latestLog?.medicationId)?.name || 'Medication';
+      logActivity('medication', `Logged self-reported adherence status "${latestLog?.status}" for ${medName} - patient ${patName}.`);
+    } else {
+      logActivity('patient', `Registry data customized for patient ${patName} (${patientId}).`);
+    }
   };
 
   // Safe helper to update patient avatar locally in state
@@ -2007,6 +2479,15 @@ export default function App() {
                             <Printer className="h-3.5 w-3.5" />
                             <span>Print Summary</span>
                           </button>
+                          
+                          <QuickNotesFAB 
+                            patientId={pat.id} 
+                            patientName={pat.name} 
+                            quickNotes={quickNotes} 
+                            onSaveNote={handleSaveQuickNote} 
+                            onClearNotes={handleClearQuickNotes} 
+                          />
+
                           <button 
                             onClick={() => setSelectedPatientId(null)}
                             className="text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-350 text-xs uppercase tracking-wider font-semibold cursor-pointer"
@@ -2053,6 +2534,12 @@ export default function App() {
                             >
                               Age Trend
                             </button>
+                            <button
+                              onClick={() => setDetailTab('medications')}
+                              className={getTabClass(detailTab === 'medications')}
+                            >
+                              Medications & Adherence
+                            </button>
                           </div>
 
                           <AnimatePresence mode="wait">
@@ -2064,7 +2551,8 @@ export default function App() {
                               transition={{ duration: 0.15 }}
                             >
                               {detailTab === 'info' ? (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                               <div className="space-y-1.5">
                                 <p className="text-slate-405 dark:text-slate-500 font-mono uppercase tracking-wider font-semibold text-[10px] mb-1">Demographics & Contact</p>
                                 <div className="space-y-1.5 text-slate-650 dark:text-slate-300">
@@ -2091,6 +2579,8 @@ export default function App() {
                                 </div>
                               </div>
                             </div>
+                            <ConsultationReminder patientId={pat.id} appointments={appointments} />
+                            </div>
                           ) : detailTab === 'vitals' ? (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-white">
                               <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
@@ -2104,11 +2594,18 @@ export default function App() {
                                 clinicalNotes={pat.clinicalNotes} 
                               />
                             </div>
+                          ) : detailTab === 'medications' ? (
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800/80 rounded-xl p-3 text-slate-800 dark:text-slate-105 animate-in fade-in slide-in-from-top-1 duration-150">
+                              <PatientMedications patient={pat} updatePatient={updatePatient} />
+                            </div>
                           ) : (() => {
                             const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                             return (
                               <div className="space-y-3">
-                                <div className="flex justify-end pr-1">
+                                <div className="flex justify-end pr-1 gap-2">
+                                  <button onClick={() => handleExportHistoryPDF(pat)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono flex items-center gap-1 transition-colors">
+                                    <Download className="w-3 h-3" /> Export Full History
+                                  </button>
                                   <select 
                                     className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
                                     value={historyStatusFilter}
@@ -2175,6 +2672,8 @@ export default function App() {
                 setSelectedPatientId={setSelectedPatientId}
                 setActiveView={setActiveView}
                 updateDoctorAvailability={updateDoctorAvailability}
+                activities={activities}
+                onPrintCurrentView={printDoctorDashboard}
               />
             ) : (
               <PatientDashboard 
@@ -2523,6 +3022,13 @@ export default function App() {
                             >
                               Recent Visits
                             </button>
+                            <button
+                              onClick={() => setStatusFilter('priority')}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center space-x-1 ${statusFilter === 'priority' ? 'bg-rose-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
+                            >
+                              <AlertTriangle className="h-3.5 w-3.5" />
+                              <span>Priority View</span>
+                            </button>
                           </div>
 
                           <button
@@ -2565,6 +3071,14 @@ export default function App() {
                         <span className="text-xs text-slate-500 font-mono tracking-wider uppercase font-semibold">
                           Count: {filteredPatients.length} / {patients.length} Registered
                         </span>
+                        <button
+                          onClick={printPatientDirectory}
+                          className="px-2.5 py-1.5 text-[10px] bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800 text-teal-705 dark:text-teal-400 rounded-lg font-mono font-bold uppercase tracking-widest cursor-pointer shadow-sm transition flex items-center gap-1"
+                          title="Print the entire patient directory index"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print Directory</span>
+                        </button>
                         {selectedPatientIds.size > 0 && (
                           <div className="flex items-center space-x-2 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
                             <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 font-mono uppercase tracking-widest">{selectedPatientIds.size} Selected:</span>
@@ -2704,6 +3218,11 @@ export default function App() {
                                           </div>
                                         </div>
                                       )}
+                                      {getPatientPriorityScore(patient) > 0 && (
+                                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight flex items-center gap-0.5 ${getPatientPriorityScore(patient) >= 100 ? 'bg-rose-100 dark:bg-rose-900/50 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-400' : 'bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400'}`} title={`Triage Priority Score: ${getPatientPriorityScore(patient)}`}>
+                                          Triage P-{(200 - getPatientPriorityScore(patient))}
+                                        </span>
+                                      )}
                                       {hasHealthAlert(patient) && patient.taskStatus !== 'Urgent' && (
                                         <span className="bg-rose-50 dark:bg-rose-900/50 text-rose-700 dark:text-rose-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 uppercase tracking-tight" title="High-risk vitals">Health Alert</span>
                                       )}
@@ -2815,6 +3334,15 @@ export default function App() {
                                     <Printer className="h-3.5 w-3.5" />
                                     <span>Print Summary</span>
                                   </button>
+
+                                  <QuickNotesFAB 
+                                    patientId={pat.id} 
+                                    patientName={pat.name} 
+                                    quickNotes={quickNotes} 
+                                    onSaveNote={handleSaveQuickNote} 
+                                    onClearNotes={handleClearQuickNotes} 
+                                  />
+
                                   <button 
                                     onClick={() => setSelectedPatientId(null)}
                                     className="text-slate-400 hover:text-white text-xs font-mono uppercase bg-slate-850 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
@@ -2907,6 +3435,7 @@ export default function App() {
                                       {pat.clinicalNotes || 'No persistent clinical notes recorded for this patient sample.'}
                                     </div>
                                   </div>
+                                  <ConsultationReminder patientId={pat.id} appointments={appointments} />
                                 </div>
                               ) : detailTab === 'vitals' ? (
                                 <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
@@ -2917,6 +3446,10 @@ export default function App() {
                                   appointments={appointments} 
                                   clinicalNotes={pat.clinicalNotes} 
                                 />
+                              ) : detailTab === 'medications' ? (
+                                <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                                  <PatientMedications patient={pat} updatePatient={updatePatient} />
+                                </div>
                               ) : detailTab === 'invoices' ? (
                                 (() => {
                                   let pTxs: any[] = [];
@@ -3044,7 +3577,10 @@ export default function App() {
                                 const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                                 return (
                                   <div className="space-y-3 font-sans">
-                                    <div className="flex justify-end pr-1">
+                                    <div className="flex justify-end pr-1 gap-2">
+                                      <button onClick={() => handleExportHistoryPDF(pat)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono flex items-center gap-1 transition-colors">
+                                        <Download className="w-3 h-3" /> Export Full History
+                                      </button>
                                       <select 
                                         className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
                                         value={historyStatusFilter}
@@ -3175,6 +3711,12 @@ export default function App() {
                                 My Clinical Vitals Chart
                               </button>
                               <button
+                                onClick={() => setDetailTab('medications')}
+                                className={getTabClass(detailTab === 'medications')}
+                              >
+                                My Medications Logs
+                              </button>
+                              <button
                                 onClick={() => setDetailTab('invoices')}
                                 className={getTabClass(detailTab === 'invoices')}
                               >
@@ -3191,7 +3733,8 @@ export default function App() {
                                 transition={{ duration: 0.15 }}
                               >
                                 {detailTab === 'info' ? (
-                                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                 <div>
                                   <span className="text-slate-400 block font-mono">My Age (DOB)</span>
                                   <span className="font-semibold text-slate-200 flex items-center flex-wrap gap-1 mt-0.5">
@@ -3220,8 +3763,14 @@ export default function App() {
                                   <span className="font-semibold text-slate-200 block truncate max-w-[200px]">{pat.emergencyContactName || 'N/A'} - {pat.emergencyContactPhone || 'N/A'}</span>
                                 </div>
                               </div>
+                              <ConsultationReminder patientId={pat.id} appointments={appointments} />
+                            </div>
                             ) : detailTab === 'vitals' ? (
                               <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
+                            ) : detailTab === 'medications' ? (
+                              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
+                                <PatientMedications patient={pat} updatePatient={updatePatient} />
+                              </div>
                             ) : detailTab === 'invoices' ? (
                               (() => {
                                 let pTxs: any[] = [];
@@ -3345,7 +3894,10 @@ export default function App() {
                               const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                               return (
                                 <div className="space-y-3 font-sans">
-                                  <div className="flex justify-end pr-1">
+                                  <div className="flex justify-end pr-1 gap-2">
+                                    <button onClick={() => handleExportHistoryPDF(pat)} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono flex items-center gap-1 transition-colors">
+                                      <Download className="w-3 h-3" /> Export Full History
+                                    </button>
                                     <select 
                                       className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
                                       value={historyStatusFilter}
@@ -3756,6 +4308,14 @@ export default function App() {
                           </button>
                         )}
                       </div>
+                      <button
+                        onClick={printAppointmentCalendar}
+                        className="inline-flex shrink-0 items-center space-x-1.5 px-3 py-2 bg-teal-50 dark:bg-teal-950/40 hover:bg-teal-100 dark:hover:bg-teal-900/40 border border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-400 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                        title="Print entire calendar schedule view"
+                      >
+                        <Printer className="h-3.5 w-3.5" />
+                        <span className="hidden sm:inline">Print View</span>
+                      </button>
                       <button
                         onClick={triggerDownloadAppointmentsCSV}
                         className="inline-flex shrink-0 items-center space-x-1.5 px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -4264,77 +4824,188 @@ export default function App() {
 
       {/* GLOBAL ADD VITAL MODAL */}
       <AnimatePresence>
-        {isVitalModalOpen && addVitalPatientId && (
+        {isVitalModalOpen && addVitalPatientId && (() => {
+          const pat = patients.find(p => p.id === addVitalPatientId);
+          const prevVitals = pat?.vitals?.length ? pat.vitals[pat.vitals.length - 1] : null;
+          
+          const bmi = (typeof vitalHeight === 'number' && typeof vitalWeight === 'number' && vitalHeight > 0) 
+            ? (vitalWeight / Math.pow(vitalHeight / 100, 2)).toFixed(1) 
+            : null;
+
+          const hasAlert = vitalSys > 180 || vitalDia > 120;
+          const alertMessage = hasAlert ? 'Warning: Blood pressure is dangerously high. Immediate medical attention may be required.' : null;
+
+          const getTrendIcon = (current: number, prev: number | undefined, lowerIsBetter: boolean = true) => {
+            if (prev === undefined) return null;
+            if (current === prev) return <Minus className="w-3 h-3 text-slate-400 inline ml-1" />;
+            const isBetter = lowerIsBetter ? current < prev : current > prev;
+            return isBetter 
+              ? <ArrowDown className="w-3 h-3 text-emerald-500 inline ml-1" />
+              : <ArrowUp className="w-3 h-3 text-rose-500 inline ml-1" />;
+          };
+
+          return (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 font-sans text-left">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl max-w-sm w-full p-5 space-y-4 shadow-xl"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl max-w-md w-full shadow-xl flex flex-col max-h-[90vh]"
             >
-              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm font-mono tracking-wide">Record manual Vitals</h3>
-                <button onClick={() => setIsVitalModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-5 pb-4 shrink-0">
+                <div className="space-y-1">
+                  <h3 className="font-bold text-slate-900 dark:text-white text-sm font-mono tracking-wide">Record manual Vitals</h3>
+                  <div className="flex gap-2">
+                    <button onClick={() => setIsHistoryLogOpen(true)} className="text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded font-semibold uppercase tracking-wider transition-colors inline-block text-left relative z-10 w-auto">View All History</button>
+                  </div>
+                </div>
+                <button onClick={() => setIsVitalModalOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer -mt-4">
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setVitalSys(115 + Math.floor(Math.random() * 10));
-                  setVitalDia(75 + Math.floor(Math.random() * 10));
-                  setVitalHR(60 + Math.floor(Math.random() * 20));
-                  setVitalTemp(+(98.0 + Math.random()).toFixed(1));
-                  setEmailSimTarget('Bluetooth health monitor synchronized successfully. Vitals fields securely populated.');
-                  setTimeout(() => setEmailSimTarget(null), 4000);
-                }}
-                className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-400 shadow-xs py-2.5 rounded text-[10px] uppercase font-bold tracking-wider transition-colors cursor-pointer font-mono"
-              >
-                <Activity className="w-3.5 h-3.5" />
-                Sync Smart Device
-              </button>
-              
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                const newVital = {
-                  date: new Date().toISOString().split('T')[0],
-                  bpSys: vitalSys,
-                  bpDia: vitalDia,
-                  heartRate: vitalHR,
-                  temperature: vitalTemp
-                };
-                setPatients(prev => prev.map(p => {
-                  if (p.id === addVitalPatientId) {
-                    return { ...p, vitals: [...(p.vitals || []), newVital] };
-                  }
-                  return p;
-                }));
-                setIsVitalModalOpen(false);
-              }} className="space-y-4 font-mono text-xs max-h-[70vh] overflow-y-auto">
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 mb-1">Systolic BP (mmHg)</label>
-                  <input type="number" required value={vitalSys} onChange={e => setVitalSys(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
-                </div>
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 mb-1">Diastolic BP (mmHg)</label>
-                  <input type="number" required value={vitalDia} onChange={e => setVitalDia(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
-                </div>
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 mb-1">Heart Rate (bpm)</label>
-                  <input type="number" required value={vitalHR} onChange={e => setVitalHR(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
-                </div>
-                <div>
-                  <label className="block text-slate-500 dark:text-slate-400 mb-1">Temperature (°F)</label>
-                  <input type="number" step="0.1" required value={vitalTemp} onChange={e => setVitalTemp(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
-                </div>
-                <button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded uppercase tracking-wider transition-colors cursor-pointer">
+              <div className="p-5 space-y-4 overflow-y-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setVitalSys(115 + Math.floor(Math.random() * 10));
+                    setVitalDia(75 + Math.floor(Math.random() * 10));
+                    setVitalHR(60 + Math.floor(Math.random() * 20));
+                    setVitalTemp(+(98.0 + Math.random()).toFixed(1));
+                    setVitalHeight(175);
+                    setVitalWeight(70 + Math.floor(Math.random() * 5));
+                    setEmailSimTarget('Bluetooth health monitor synchronized successfully. Vitals fields securely populated.');
+                    setTimeout(() => setEmailSimTarget(null), 4000);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-400 shadow-xs py-2.5 rounded text-[10px] uppercase font-bold tracking-wider transition-colors cursor-pointer font-mono"
+                >
+                  <Activity className="w-3.5 h-3.5" />
+                  Sync Smart Device
+                </button>
+
+                {alertMessage && (
+                  <div className="bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 p-3 rounded-lg flex gap-3 text-rose-700 dark:text-rose-400 text-xs font-semibold items-start leading-relaxed animate-pulse">
+                    <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <span>{alertMessage}</span>
+                  </div>
+                )}
+                
+                <form id="add-vital-form" onSubmit={(e) => {
+                  e.preventDefault();
+                  const newVital = {
+                    date: new Date().toISOString().split('T')[0],
+                    bpSys: vitalSys,
+                    bpDia: vitalDia,
+                    heartRate: vitalHR,
+                    temperature: vitalTemp,
+                    height: typeof vitalHeight === 'number' ? vitalHeight : undefined,
+                    weight: typeof vitalWeight === 'number' ? vitalWeight : undefined
+                  };
+                  setPatients(prev => prev.map(p => {
+                    if (p.id === addVitalPatientId) {
+                      return { ...p, vitals: [...(p.vitals || []), newVital] };
+                    }
+                    return p;
+                  }));
+                  const patObj = patients.find(p => p.id === addVitalPatientId);
+                  logActivity('vitals', `Logged new clinical vitals for ${patObj?.name || 'Patient'} (${addVitalPatientId}): ${vitalSys}/${vitalDia} mmHg, ${vitalHR} bpm.`);
+                  setIsVitalModalOpen(false);
+                }} className="space-y-4 font-mono text-xs">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Sys BP (mmHg) {getTrendIcon(vitalSys, prevVitals?.bpSys)}</label>
+                      <input type="number" required value={vitalSys} onChange={e => setVitalSys(Number(e.target.value))} className={`w-full ${vitalSys > 140 ? 'bg-rose-50 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/50 text-rose-700 dark:text-rose-400 focus:border-rose-500' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:border-teal-500'} border rounded px-3 py-2 outline-none`} />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Dia BP (mmHg) {getTrendIcon(vitalDia, prevVitals?.bpDia)}</label>
+                      <input type="number" required value={vitalDia} onChange={e => setVitalDia(Number(e.target.value))} className={`w-full ${vitalDia > 90 ? 'bg-rose-50 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/50 text-rose-700 dark:text-rose-400 focus:border-rose-500' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white focus:border-teal-500'} border rounded px-3 py-2 outline-none`} />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Heart Rate {getTrendIcon(vitalHR, prevVitals?.heartRate)}</label>
+                      <input type="number" required value={vitalHR} onChange={e => setVitalHR(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Temp (°F) {getTrendIcon(vitalTemp, prevVitals?.temperature, vitalTemp > 99)}</label>
+                      <input type="number" step="0.1" required value={vitalTemp} onChange={e => setVitalTemp(Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Height (cm)</label>
+                      <input type="number" step="0.1" value={vitalHeight} onChange={e => setVitalHeight(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" placeholder="e.g. 175" />
+                    </div>
+                    <div>
+                      <label className="block text-slate-500 dark:text-slate-400 mb-1">Weight (kg)</label>
+                      <input type="number" step="0.1" value={vitalWeight} onChange={e => setVitalWeight(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded px-3 py-2 text-slate-900 dark:text-white outline-none focus:border-teal-500" placeholder="e.g. 70" />
+                    </div>
+                    {bmi && (
+                      <div className="col-span-2 bg-slate-100 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                        <span className="font-bold text-slate-600 dark:text-slate-400">Calculated BMI</span>
+                        <span className="font-black text-slate-900 dark:text-white text-sm">{bmi} <span className="text-[10px] font-normal text-slate-500">kg/m²</span></span>
+                      </div>
+                    )}
+                  </div>
+                </form>
+              </div>
+              <div className="p-5 border-t border-slate-100 dark:border-slate-800 shrink-0">
+                <button type="submit" form="add-vital-form" className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded uppercase tracking-wider transition-colors cursor-pointer">
                   Save Vitals Record
                 </button>
-              </form>
+              </div>
             </motion.div>
           </div>
-        )}
+          );
+        })()}
+      </AnimatePresence>
+
+      {/* History Log Modal for Add Vital */}
+      <AnimatePresence>
+        {isHistoryLogOpen && addVitalPatientId && (() => {
+          const pat = patients.find(p => p.id === addVitalPatientId);
+          return (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 font-sans text-left">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl max-w-lg w-full shadow-xl flex flex-col max-h-[85vh]"
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-5 pb-4 shrink-0">
+                <h3 className="font-bold text-slate-900 dark:text-white text-sm font-mono tracking-wide">Historical Vitals</h3>
+                <button onClick={() => setIsHistoryLogOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="p-5 overflow-y-auto space-y-4">
+                {(!pat?.vitals || pat.vitals.length === 0) ? (
+                  <p className="text-sm text-slate-500 dark:text-slate-400 font-mono text-center">No historical vitals recorded.</p>
+                ) : (
+                  <table className="w-full text-left font-mono text-[10px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                        <th className="pb-2 font-normal">Date</th>
+                        <th className="pb-2 font-normal">BP</th>
+                        <th className="pb-2 font-normal">HR</th>
+                        <th className="pb-2 font-normal">Temp</th>
+                        <th className="pb-2 font-normal w-12">H/W</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
+                      {[...pat.vitals].reverse().map((v, i) => (
+                        <tr key={i} className="text-slate-700 dark:text-slate-300">
+                          <td className="py-3">{v.date}</td>
+                          <td className="py-3">{v.bpSys}/{v.bpDia}</td>
+                          <td className="py-3">{v.heartRate}</td>
+                          <td className="py-3">{v.temperature}°F</td>
+                          <td className="py-3 text-slate-400">{v.height ? Math.round(v.height) : '-'}/{v.weight ? Math.round(v.weight) : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </motion.div>
+          </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* Delete Consultation Confirmation Modal */}

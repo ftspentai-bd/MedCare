@@ -1,3 +1,21 @@
+export interface Medication {
+  id: string;
+  name: string;
+  dosage: string;
+  frequency: string;
+  startDate: string;
+  endDate?: string;
+  prescribedBy: string;
+}
+
+export interface AdherenceLog {
+  id: string;
+  medicationId: string;
+  date: string; // YYYY-MM-DD
+  status: 'Taken' | 'Skipped' | 'Delayed';
+  notes?: string;
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -19,7 +37,11 @@ export interface Patient {
     bpDia: number;
     heartRate: number;
     temperature: number;
+    height?: number; // in inches or cm
+    weight?: number; // in lbs or kg
   }[];
+  medications?: Medication[];
+  adherenceLogs?: AdherenceLog[];
 }
 
 export interface Appointment {

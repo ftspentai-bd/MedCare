@@ -13,7 +13,8 @@ import {
   Phone,
   Power,
   TrendingUp,
-  UserCheck
+  UserCheck,
+  Printer
 } from 'lucide-react';
 import { Patient, Appointment, Doctor } from '../types';
 import { calculateAge } from '../App';
@@ -46,6 +47,8 @@ interface DoctorDashboardProps {
   setSelectedPatientId: (id: string | null) => void;
   setActiveView: (view: any) => void;
   updateDoctorAvailability?: (id: string, isAvailable: boolean) => void;
+  activities?: { id: string; type: string; message: string; timestamp: string; }[];
+  onPrintCurrentView?: () => void;
 }
 
 export default function DoctorDashboard({
@@ -56,7 +59,9 @@ export default function DoctorDashboard({
   deletePatient,
   setSelectedPatientId,
   setActiveView,
-  updateDoctorAvailability
+  updateDoctorAvailability,
+  activities = [],
+  onPrintCurrentView
 }: DoctorDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrendDocId, setSelectedTrendDocId] = useState<string>('all');
@@ -80,9 +85,9 @@ export default function DoctorDashboard({
     <div className="space-y-8 font-sans" id="doctor-dashboard-root">
       
       {/* Clinician Hub Welcome Banner */}
-      <div className="bg-gradient-to-r from-slate-905 from-slate-900 to-indigo-950 text-white rounded-2xl p-6 lg:p-8 relative overflow-hidden shadow-xs border border-slate-800">
+      <div className="bg-gradient-to-r from-slate-905 from-slate-900 to-indigo-950 text-white rounded-2xl p-6 lg:p-8 relative overflow-hidden shadow-xs border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="absolute right-0 bottom-0 top-0 w-1/3 opacity-10 bg-radial from-slate-100 pointer-events-none"></div>
-        <div className="relative z-10 max-w-4xl space-y-3">
+        <div className="relative z-10 max-w-2xl space-y-3">
           <div className="inline-flex items-center space-x-2 bg-rose-500/10 text-rose-400 border border-rose-500/20 px-3 py-1 rounded-full text-xs font-mono">
             <Activity className="h-3.5 w-3.5 animate-pulse" />
             <span>Physician Portal Mode Active</span>
@@ -90,10 +95,23 @@ export default function DoctorDashboard({
           <h2 className="text-2xl lg:text-3xl font-bold tracking-tight text-white mb-2">
             Clinical Hub & Urgent Triage Dashboard
           </h2>
-          <p className="text-slate-300 text-sm max-w-2xl leading-relaxed">
+          <p className="text-slate-300 text-sm leading-relaxed">
             Logged in with clinical authority. Monitor live urgent alerts, supervise upcoming clinical consultations, and triage patient health record indexes dynamically with state-persistence checks.
           </p>
         </div>
+        
+        {onPrintCurrentView && (
+          <div className="relative z-10 shrink-0 md:self-center">
+            <button
+              onClick={onPrintCurrentView}
+              className="inline-flex items-center space-x-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white border border-teal-700 text-xs font-semibold rounded-xl shadow-sm transition-all hover:-translate-y-0.5 cursor-pointer"
+              title="Print operations metrics summary"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              <span>Print Current Board</span>
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -274,6 +292,50 @@ export default function DoctorDashboard({
 
         {/* RIGHT SIDEBAR: QUICK REGISTRY LOOKUP & CLINICAL BOUND CHECKS (Col span 1) */}
         <div className="space-y-6">
+          
+          {/* Real-time Activity Stream Sidebar */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4 transition-colors">
+            <div>
+              <h4 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 bg-emerald-500 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600"></span>
+                </span>
+                <span>Live Action Activity Stream</span>
+              </h4>
+              <p className="text-[10px] text-slate-400">Real-time chronicle of clinician & database mutations</p>
+            </div>
+
+            <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1 custom-scrollbar">
+              {(!activities || activities.length === 0) ? (
+                <p className="text-center text-slate-405 italic text-[10px] py-6">No recent actions logged yet.</p>
+              ) : (
+                activities.map((act) => {
+                  let badgeColor = "bg-slate-100 text-slate-750 dark:bg-slate-800 dark:text-slate-300";
+                  if (act.type === 'patient') badgeColor = "bg-sky-50 dark:bg-sky-950/45 text-sky-700 dark:text-sky-400 border border-sky-100 dark:border-sky-900/40";
+                  if (act.type === 'vitals') badgeColor = "bg-rose-50 dark:bg-rose-950/45 text-rose-700 dark:text-rose-450 border border-rose-105 dark:border-rose-900/40";
+                  if (act.type === 'appointment') badgeColor = "bg-emerald-50 dark:bg-emerald-950/45 text-emerald-700 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/40";
+                  if (act.type === 'medication') badgeColor = "bg-teal-50 dark:bg-teal-950/45 text-teal-700 dark:text-teal-400 border border-teal-100 dark:border-teal-900/40";
+                  if (act.type === 'quick_note') badgeColor = "bg-indigo-50 dark:bg-indigo-950/45 text-indigo-700 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40";
+
+                  return (
+                    <div key={act.id} className="text-xs p-2.5 rounded-lg border border-slate-100 dark:border-slate-850 bg-slate-50/50 dark:bg-slate-900/20 space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className={`text-[8.5px] font-mono font-bold uppercase px-1.5 py-0.5 rounded ${badgeColor}`}>
+                          {act.type}
+                        </span>
+                        <span className="text-[9px] text-zinc-400 dark:text-zinc-500 font-mono flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          {act.timestamp}
+                        </span>
+                      </div>
+                      <p className="text-slate-700 dark:text-slate-350 select-text break-words leading-relaxed">{act.message}</p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
           
           {/* Quick Registry Directory Search */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4 transition-colors">

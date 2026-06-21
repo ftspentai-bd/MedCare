@@ -418,6 +418,7 @@ export default function App() {
 
   // Theme and search states
   const [darkMode, setDarkMode] = useState(false);
+  const [bloodGroupFilter, setBloodGroupFilter] = useState<string>('all');
   const [appointmentSearchQuery, setAppointmentSearchQuery] = useState('');
   const [ledgerTab, setLedgerTab] = useState<'calendar' | 'list'>('calendar');
   const [ledgerDocFilterId, setLedgerDocFilterId] = useState<string>('all');
@@ -663,6 +664,9 @@ export default function App() {
       (patient.address && patient.address.toLowerCase().includes(searchQuery.toLowerCase()));
 
     if (!matchesSearch) return false;
+
+    // Filter by blood group
+    if (bloodGroupFilter !== 'all' && patient.bloodGroup !== bloodGroupFilter) return false;
 
     // Filter by age range
     const age = calculateAge(patient.dateOfBirth);
@@ -3099,7 +3103,7 @@ export default function App() {
               {userRole !== 'patient' ? (
                 <>
                   {/* Main Directory Table list */}
-                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden">
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden" id="patient-dashboard-grid">
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row xl:items-center gap-4 justify-between bg-slate-50 dark:bg-slate-950/40">
                       <div className="flex items-center space-x-3 w-full xl:max-w-xs">
                         <div className="relative w-full">
@@ -3144,6 +3148,26 @@ export default function App() {
                               <AlertTriangle className="h-3.5 w-3.5" />
                               <span>Priority View</span>
                             </button>
+                          </div>
+
+                          {/* Blood Group Select Filter */}
+                          <div className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-350 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider">Blood Type:</span>
+                            <select
+                              value={bloodGroupFilter}
+                              onChange={(e) => setBloodGroupFilter(e.target.value)}
+                              className="bg-transparent text-slate-705 dark:text-slate-200 outline-none cursor-pointer text-xs font-mono font-bold"
+                            >
+                              <option value="all">ALL GROUPS</option>
+                              <option value="A+">A+</option>
+                              <option value="A-">A-</option>
+                              <option value="B+">B+</option>
+                              <option value="B-">B-</option>
+                              <option value="AB+">AB+</option>
+                              <option value="AB-">AB-</option>
+                              <option value="O+">O+</option>
+                              <option value="O-">O-</option>
+                            </select>
                           </div>
 
                           <button

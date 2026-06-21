@@ -11,7 +11,7 @@ import {
   ReferenceArea
 } from 'recharts';
 import { Appointment, Patient } from '../types';
-import { Heart, Activity, Thermometer, Plus, X } from 'lucide-react';
+import { Heart, Activity, Thermometer, Plus, X, Download } from 'lucide-react';
 
 interface PatientVitalsChartProps {
   patient: Patient;
@@ -112,6 +112,29 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
   // Current/latest parameters for dashboard quick display
   const latestRecord = formattedChartData[formattedChartData.length - 1];
 
+  const handleDownloadCSV = () => {
+    // Generate CSV export for BP, HR, Temp of the patient
+    const headers = ["Date", "Systolic BP(mmHg)", "Diastolic BP(mmHg)", "Heart Rate(bpm)", "Temperature(F)"];
+    const rows = uniqueRecords.map(record => [
+      record.date,
+      record.bpSys,
+      record.bpDia,
+      record.heartRate,
+      record.temperature
+    ]);
+    
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+      
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `vitals_${patient.name.toLowerCase().replace(/\s+/g, '_')}_${patient.id}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const getSysColor = (sys: number) => {
     if (sys < 120) return 'text-emerald-400';
     if (sys < 130) return 'text-amber-400';
@@ -125,7 +148,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
   };
 
   return (
-    <div className="space-y-4 font-sans text-white p-1" id="vitals-chart-panel">
+    <div className="patient-vitals-chart-container space-y-4 font-sans text-white p-1" id="vitals-chart-panel">
       
       {/* Vitals overview strip */}
       <div className="grid grid-cols-3 gap-3">
@@ -168,15 +191,25 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               {formattedChartData.length} Readings Mapped
             </div>
           </div>
-          {updatePatient && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center space-x-1 border border-teal-800/60 bg-teal-900/30 hover:bg-teal-800/40 text-teal-400 px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors"
+              onClick={handleDownloadCSV}
+              className="inline-flex items-center gap-1 border border-slate-800 hover:border-slate-700 bg-slate-900/80 hover:bg-slate-850 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-all"
+              title="Download Vitals CSV"
             >
-              <Plus className="h-3 w-3" />
-              <span>Add Vital</span>
+              <Download className="h-3 w-3" />
+              <span>Download CSV</span>
             </button>
-          )}
+            {updatePatient && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="inline-flex items-center space-x-1 border border-teal-800/60 bg-teal-900/30 hover:bg-teal-800/40 text-teal-400 px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Add Vital</span>
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="h-[180px] w-full" id="vitals-recharts-chart-wrapper">
@@ -214,15 +247,51 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 domain={[50, 150]}
               />
               <Tooltip
-                contentStyle={{ 
-                  backgroundColor: '#09090b', 
-                  borderColor: '#27272a',
-                  borderRadius: '0.5rem',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: '#ffffff'
+                cursor={{ stroke: '#14b8a6', strokeWidth: 1.5, strokeDasharray: '3 3' }}
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 shadow-xl space-y-2 font-mono text-xs text-white max-w-xs">
+                        <div className="text-teal-400 font-bold border-b border-slate-900 pb-1 flex items-center justify-between">
+                          <span>📅 {data.date}</span>
+                          <span className="text-[9px] text-slate-500 font-normal">{label}</span>
+                        </div>
+                        <div className="space-y-1 text-[10px]">
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-rose-400 flex items-center gap-1 font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                              Systolic BP:
+                            </span>
+                            <span className="font-bold text-slate-100">{data.bpSys} mmHg</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-blue-400 flex items-center gap-1 font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                              Diastolic BP:
+                            </span>
+                            <span className="font-bold text-slate-100">{data.bpDia} mmHg</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-emerald-400 flex items-center gap-1 font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Pulse Rate:
+                            </span>
+                            <span className="font-bold text-slate-100">{data.heartRate} bpm</span>
+                          </div>
+                          <div className="flex items-center justify-between gap-4">
+                            <span className="text-amber-400 flex items-center gap-1 font-semibold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                              Temperature:
+                            </span>
+                            <span className="font-bold text-slate-100">{data.temperature} °F</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
                 }}
-                labelStyle={{ fontWeight: 'bold', color: '#14b8a6' }}
               />
               <Line 
                 name="Systolic BP" 

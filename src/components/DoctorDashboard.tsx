@@ -625,6 +625,41 @@ export default function DoctorDashboard({
             );
           })()}
 
+          {/* CONSULTATIONS PER DOCTOR CHART */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4 transition-colors">
+            <div>
+              <h4 className="font-bold text-slate-900 dark:text-white text-xs flex items-center gap-1.5">
+                <Activity className="h-4 w-4 text-blue-500" />
+                <span>Consultations per Doctor</span>
+              </h4>
+              <p className="text-[10px] text-slate-400">Total volume of scheduled consultations</p>
+            </div>
+            <div className="h-48 w-full opacity-90 mt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={doctors.map(d => ({
+                  name: d.name.replace('Dr. ', ''),
+                  consults: appointments.filter(a => a.doctorId === d.id).length
+                }))} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800/50" />
+                  <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={9} tickLine={false} axisLine={false} />
+                  <RechartsTooltip 
+                    cursor={{fill: '#f1f5f9', opacity: 0.1}}
+                    contentStyle={{ 
+                      backgroundColor: '#0f172a', 
+                      border: '1px solid #1e293b', 
+                      borderRadius: '8.5px',
+                      color: '#f8fafc',
+                      fontFamily: 'monospace',
+                      fontSize: '10px'
+                    }} 
+                  />
+                  <Bar dataKey="consults" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={24} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           {/* DOCTOR Availability Profile Controller Cabinet */}
           <div className="bg-white dark:bg-slate-900 border border-slate-205 dark:border-slate-800 rounded-xl p-5 shadow-xs space-y-4 transition-colors">
             <div>
@@ -643,6 +678,14 @@ export default function DoctorDashboard({
                     <div className="space-y-0.5">
                       <p className="font-bold text-slate-805 dark:text-slate-200">{doc.name}</p>
                       <span className="text-[9.5px] text-slate-400 block truncate font-mono uppercase">{doc.specialization} OPD</span>
+                      <span className="text-[9.5px] text-blue-500 font-semibold block">{appointments.filter(a => {
+                        if (a.doctorId !== doc.id) return false;
+                        const aptDate = new Date(a.dateTime);
+                        const currDate = new Date();
+                        const diffTime = aptDate.getTime() - currDate.getTime();
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        return diffDays >= 0 && diffDays <= 7;
+                      }).length} scheduled this week</span>
                     </div>
 
                     <button

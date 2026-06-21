@@ -13,6 +13,13 @@ export interface Patient {
   hasRecentVisit: boolean;
   avatar?: string;
   clinicalNotes?: string;
+  vitals?: {
+    date: string;
+    bpSys: number;
+    bpDia: number;
+    heartRate: number;
+    temperature: number;
+  }[];
 }
 
 export interface Appointment {

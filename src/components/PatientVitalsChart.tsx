@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ResponsiveContainer, 
   LineChart, 
@@ -9,17 +9,24 @@ import {
   Tooltip, 
   Legend 
 } from 'recharts';
-import { Appointment } from '../types';
-import { Heart, Activity, Thermometer } from 'lucide-react';
+import { Appointment, Patient } from '../types';
+import { Heart, Activity, Thermometer, Plus, X } from 'lucide-react';
 
 interface PatientVitalsChartProps {
-  patientId: string;
+  patient: Patient;
   appointments: Appointment[];
+  updatePatient?: (id: string, updates: Partial<Patient>) => void;
 }
 
-export default function PatientVitalsChart({ patientId, appointments }: PatientVitalsChartProps) {
+export default function PatientVitalsChart({ patient, appointments, updatePatient }: PatientVitalsChartProps) {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newSys, setNewSys] = useState(120);
+  const [newDia, setNewDia] = useState(80);
+  const [newHR, setNewHR] = useState(72);
+  const [newTemp, setNewTemp] = useState(98.6);
+
   // Generate stable baseline clinical vitals uniquely hashed by the patientId
-  const seed = patientId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const seed = patient.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   
   // Baseline configurations based on patient unique seed
   const baseSys = 115 + (seed % 15); // 115 - 130 mmHg
@@ -54,11 +61,15 @@ export default function PatientVitalsChart({ patientId, appointments }: PatientV
 
   // Resolve actually completed appointments in state to append real live consultations
   const completedVisits = appointments
-    .filter(a => a.patientId === patientId && a.status === 'Completed')
+    .filter(a => a.patientId === patient.id && a.status === 'Completed')
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
 
   // Merge the real appointments into our chronological records
   const clinicalRecords = [...baselineData];
+  
+  if (patient.vitals) {
+    patient.vitals.forEach(v => clinicalRecords.push(v));
+  }
   
   completedVisits.forEach((visit, index) => {
     // Generate a slightly variation of the baseline to correspond to the real visit
@@ -131,11 +142,22 @@ export default function PatientVitalsChart({ patientId, appointments }: PatientV
 
       {/* Embedded Chart Box */}
       <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 font-mono">Recorded Vitals Index History</span>
-          <span className="text-[9px] bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono">
-            {formattedChartData.length} Readings Mapped
-          </span>
+        <div className="flex items-start justify-between">
+          <div className="space-y-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 font-mono">Recorded Vitals Index History</span>
+            <div className="text-[9px] bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono inline-block mt-1">
+              {formattedChartData.length} Readings Mapped
+            </div>
+          </div>
+          {updatePatient && (
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center space-x-1 border border-teal-800/60 bg-teal-900/30 hover:bg-teal-800/40 text-teal-400 px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              <span>Add Vital</span>
+            </button>
+          )}
         </div>
 
         <div className="h-[180px] w-full" id="vitals-recharts-chart-wrapper">
@@ -221,6 +243,54 @@ export default function PatientVitalsChart({ patientId, appointments }: PatientV
         </div>
 
       </div>
+
+      {/* Add Vital Modal */}
+      {isModalOpen && updatePatient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-sm w-full p-5 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="font-bold text-white text-sm font-mono tracking-wide">Record manual Vitals</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const newVital = {
+                date: new Date().toISOString().split('T')[0],
+                bpSys: newSys,
+                bpDia: newDia,
+                heartRate: newHR,
+                temperature: newTemp
+              };
+              const updatedVitals = patient.vitals ? [...patient.vitals, newVital] : [newVital];
+              updatePatient(patient.id, { vitals: updatedVitals });
+              setIsModalOpen(false);
+            }} className="space-y-4 font-mono text-xs max-h-[70vh] overflow-y-auto">
+              <div>
+                <label className="block text-slate-400 mb-1">Systolic BP (mmHg)</label>
+                <input type="number" required value={newSys} onChange={e => setNewSys(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white outline-none focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Diastolic BP (mmHg)</label>
+                <input type="number" required value={newDia} onChange={e => setNewDia(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white outline-none focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Heart Rate (bpm)</label>
+                <input type="number" required value={newHR} onChange={e => setNewHR(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white outline-none focus:border-teal-500" />
+              </div>
+              <div>
+                <label className="block text-slate-400 mb-1">Temperature (°F)</label>
+                <input type="number" step="0.1" required value={newTemp} onChange={e => setNewTemp(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white outline-none focus:border-teal-500" />
+              </div>
+              <button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white font-bold py-2 rounded uppercase tracking-wider transition-colors cursor-pointer">
+                Save Vitals Record
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );

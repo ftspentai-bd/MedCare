@@ -66,6 +66,18 @@ export const calculateAge = (dobString: string): number => {
   return age;
 };
 
+// Health alert checker utility
+export const hasHealthAlert = (patient: any): boolean => {
+  if (patient.taskStatus === 'Urgent') return true;
+  if (patient.vitals && patient.vitals.length > 0) {
+    const latestVital = patient.vitals[patient.vitals.length - 1];
+    if (latestVital.bpSys > 140 || latestVital.bpDia > 90 || latestVital.heartRate > 100 || latestVital.temperature > 100.4) {
+      return true;
+    }
+  }
+  return false;
+};
+
 // Days until appointment counter utility
 export const getDaysUntil = (dateTimeStr: string): string => {
   if (!dateTimeStr) return '';
@@ -162,6 +174,7 @@ export default function App() {
   const [patients, setPatients] = useState<Patient[]>(initialPatients);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState<'All' | 'Completed' | 'Pending' | 'Cancelled'>('Completed');
   
   // Active status filter state: 'all' | 'urgent' | 'recent'
   const [statusFilter, setStatusFilter] = useState<'all' | 'urgent' | 'recent'>('all');
@@ -172,11 +185,11 @@ export default function App() {
   // Appointment Ledger states
   const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments);
   const [isSchedFormOpen, setIsSchedFormOpen] = useState(false);
-  const [schedPatientId, setSchedPatientId] = useState('');
-  const [schedDoctorId, setSchedDoctorId] = useState('');
-  const [schedDateTime, setSchedDateTime] = useState('');
-  const [schedNotes, setSchedNotes] = useState('');
-  const [schedStatus, setSchedStatus] = useState<'Pending' | 'Confirmed'>('Confirmed');
+  const [schedPatientId, setSchedPatientId] = useState(() => localStorage.getItem('draft_schedPatientId') || '');
+  const [schedDoctorId, setSchedDoctorId] = useState(() => localStorage.getItem('draft_schedDoctorId') || '');
+  const [schedDateTime, setSchedDateTime] = useState(() => localStorage.getItem('draft_schedDateTime') || '');
+  const [schedNotes, setSchedNotes] = useState(() => localStorage.getItem('draft_schedNotes') || '');
+  const [schedStatus, setSchedStatus] = useState<'Pending' | 'Confirmed'>((localStorage.getItem('draft_schedStatus') as any) || 'Confirmed');
   const [schedError, setSchedError] = useState('');
   const [schedOverrideConflict, setSchedOverrideConflict] = useState(false);
   const [schedIsRecurring, setSchedIsRecurring] = useState(false);
@@ -245,6 +258,14 @@ export default function App() {
       sessionStorage.removeItem('patient_form_draft');
     }
   }, [formValues, editingPatient, isFormOpen]);
+
+  React.useEffect(() => {
+    localStorage.setItem('draft_schedPatientId', schedPatientId);
+    localStorage.setItem('draft_schedDoctorId', schedDoctorId);
+    localStorage.setItem('draft_schedDateTime', schedDateTime);
+    localStorage.setItem('draft_schedNotes', schedNotes);
+    localStorage.setItem('draft_schedStatus', schedStatus);
+  }, [schedPatientId, schedDoctorId, schedDateTime, schedNotes, schedStatus]);
   
   // Selected detail states for pillars
   const [selectedTable, setSelectedTable] = useState<string>("patients");
@@ -493,6 +514,44 @@ export default function App() {
     document.body.removeChild(link);
   };
 
+  // Client-side utility function to trigger CSV file download for filtered appointment list
+  const downloadAppointmentsCSV = () => {
+    const headers = [
+      "Appointment ID",
+      "Patient ID",
+      "Patient Name",
+      "Doctor ID",
+      "Doctor Name",
+      "Date Time",
+      "Status",
+      "Notes",
+      "Creation Timestamp"
+    ];
+
+    const rows = filteredAppointments.map(a => [
+      `"${a.id}"`,
+      `"${a.patientId}"`,
+      `"${a.patientName.replace(/"/g, '""')}"`,
+      `"${a.doctorId}"`,
+      `"${(a.doctorName || '').replace(/"/g, '""')}"`,
+      `"${a.dateTime}"`,
+      `"${a.status}"`,
+      `"${(a.notes || '').replace(/[\r\n]+/g, ' ').replace(/"/g, '""')}"`,
+      `"${a.createdAt}"`
+    ]);
+
+    const csvContent = "data:text/csv;charset=utf-8," 
+      + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `CareSync_Filtered_Schedule_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Overlap / Conflict Validation Helper
   const getDoctorConflict = () => {
     if (!schedDoctorId || !schedDateTime) return null;
@@ -735,6 +794,10 @@ export default function App() {
     } catch (e) {
       console.error("Error storing sandbox payment transaction:", e);
     }
+  };
+
+  const updatePatient = (patientId: string, updates: Partial<Patient>) => {
+    setPatients(prev => prev.map(p => p.id === patientId ? { ...p, ...updates } : p));
   };
 
   // Safe helper to update patient avatar locally in state
@@ -1589,7 +1652,12 @@ export default function App() {
                               >
                                 <td className="py-3.5 px-4 font-mono font-medium text-teal-700">{patient.id}</td>
                                 <td className="py-3.5 px-4 font-bold text-slate-900">
-                                  <span className="hover:underline">{patient.name}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="hover:underline">{patient.name}</span>
+                                    {hasHealthAlert(patient) && (
+                                      <span className="bg-rose-100 text-rose-700 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider h-fit" title="Urgent status or high-risk vitals">Health Alert</span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3.5 px-4 text-slate-600">{patient.dateOfBirth}</td>
                                 <td className="py-3.5 px-4 text-slate-600">
@@ -1775,7 +1843,7 @@ export default function App() {
                             </div>
                           ) : detailTab === 'vitals' ? (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-white">
-                              <PatientVitalsChart patientId={pat.id} appointments={appointments} />
+                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
                             </div>
                           ) : detailTab === 'age-trend' ? (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-white">
@@ -1787,17 +1855,29 @@ export default function App() {
                               />
                             </div>
                           ) : (() => {
-                            const completedVisits = appointments.filter(a => a.patientId === pat.id && a.status === 'Completed');
+                            const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
                             return (
                               <div className="space-y-3">
-                                {completedVisits.length === 0 ? (
+                                <div className="flex justify-end pr-1">
+                                  <select 
+                                    className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
+                                    value={historyStatusFilter}
+                                    onChange={e => setHistoryStatusFilter(e.target.value as any)}
+                                  >
+                                    <option value="All">All Statuses</option>
+                                    <option value="Completed">Completed</option>
+                                    <option value="Pending">Pending</option>
+                                    <option value="Cancelled">Cancelled</option>
+                                  </select>
+                                </div>
+                                {filteredVisits.length === 0 ? (
                                   <div className="text-center py-8 text-slate-400 border border-dashed border-slate-250 dark:border-slate-850 rounded-lg">
-                                    <p className="font-semibold text-xs text-slate-500 dark:text-slate-400">No Past Visit Records Found</p>
-                                    <p className="text-[10px] text-slate-400 mt-1">This patient does not have any completed consultation records linked in system.</p>
+                                    <p className="font-semibold text-xs text-slate-500 dark:text-slate-400">No {historyStatusFilter !== 'All' ? historyStatusFilter : ''} Visit Records Found</p>
+                                    <p className="text-[10px] text-slate-400 mt-1">This patient does not have any consultation records matching the filter.</p>
                                   </div>
                                 ) : (
                                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                    {completedVisits.map(visit => (
+                                    {filteredVisits.map(visit => (
                                       <div key={visit.id} className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
                                         <div className="flex items-center justify-between text-[10px]">
                                           <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{visit.id}</span>
@@ -2259,6 +2339,9 @@ export default function App() {
                                   <td className="py-4 px-5 font-bold text-slate-900 dark:text-slate-100 leading-tight">
                                     <div className="flex flex-wrap items-center gap-1.5">
                                       <span className="font-bold text-slate-950 dark:text-white">{patient.name}</span>
+                                      {hasHealthAlert(patient) && (
+                                        <span className="bg-rose-50 dark:bg-rose-900/50 text-rose-700 dark:text-rose-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 uppercase tracking-tight" title="Urgent status or high-risk vitals">Health Alert</span>
+                                      )}
                                       {patient.taskStatus === 'Urgent' && (
                                         <span className="bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-400 text-[9px] font-mono font-bold px-1 py-0.2 rounded border border-rose-200 dark:border-rose-900 uppercase tracking-tight">Urgent</span>
                                       )}
@@ -2429,7 +2512,7 @@ export default function App() {
                                   </div>
                                 </div>
                               ) : detailTab === 'vitals' ? (
-                                <PatientVitalsChart patientId={pat.id} appointments={appointments} />
+                                <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
                               ) : detailTab === 'age-trend' ? (
                                 <PatientAgeTrendChart 
                                   patientId={pat.id} 
@@ -2561,17 +2644,29 @@ export default function App() {
                                   );
                                 })()
                               ) : (() => {
-                                const completedVisits = appointments.filter(a => a.patientId === pat.id && a.status === 'Completed');
+                                const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
                                 return (
                                   <div className="space-y-3 font-sans">
-                                    {completedVisits.length === 0 ? (
+                                    <div className="flex justify-end pr-1">
+                                      <select 
+                                        className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
+                                        value={historyStatusFilter}
+                                        onChange={e => setHistoryStatusFilter(e.target.value as any)}
+                                      >
+                                        <option value="All">All Statuses</option>
+                                        <option value="Completed">Completed</option>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Cancelled">Cancelled</option>
+                                      </select>
+                                    </div>
+                                    {filteredVisits.length === 0 ? (
                                       <div className="text-center py-6 text-slate-550 border border-dashed border-slate-800 rounded-lg">
-                                        <p className="font-semibold text-xs text-slate-405">No Past Visit Records Found</p>
-                                        <p className="text-[10px] text-slate-500 mt-1">This patient does not have any completed consultation records linked in system.</p>
+                                        <p className="font-semibold text-xs text-slate-405">No {historyStatusFilter !== 'All' ? historyStatusFilter : ''} Visit Records Found</p>
+                                        <p className="text-[10px] text-slate-500 mt-1">This patient does not have any consultation records matching the filter.</p>
                                       </div>
                                     ) : (
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                        {completedVisits.map(visit => (
+                                        {filteredVisits.map(visit => (
                                           <div key={visit.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
                                             <div className="flex items-center justify-between text-[10px]">
                                               <span className="font-mono text-teal-400 font-semibold">{visit.id}</span>
@@ -2695,7 +2790,7 @@ export default function App() {
                                 </div>
                               </div>
                             ) : detailTab === 'vitals' ? (
-                              <PatientVitalsChart patientId={pat.id} appointments={appointments} />
+                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
                             ) : detailTab === 'invoices' ? (
                               (() => {
                                 let pTxs: any[] = [];
@@ -2816,17 +2911,29 @@ export default function App() {
                                 );
                               })()
                             ) : (() => {
-                              const completedVisits = appointments.filter(a => a.patientId === pat.id && a.status === 'Completed');
+                              const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
                               return (
                                 <div className="space-y-3 font-sans">
-                                  {completedVisits.length === 0 ? (
+                                  <div className="flex justify-end pr-1">
+                                    <select 
+                                      className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[10px] text-slate-700 dark:text-slate-300 rounded px-2 py-1 outline-none font-mono"
+                                      value={historyStatusFilter}
+                                      onChange={e => setHistoryStatusFilter(e.target.value as any)}
+                                    >
+                                      <option value="All">All Statuses</option>
+                                      <option value="Completed">Completed</option>
+                                      <option value="Pending">Pending</option>
+                                      <option value="Cancelled">Cancelled</option>
+                                    </select>
+                                  </div>
+                                  {filteredVisits.length === 0 ? (
                                     <div className="text-center py-6 text-slate-550 border border-dashed border-slate-805 rounded-lg">
-                                      <p className="font-semibold text-xs text-slate-400">No Past Visit Records Found</p>
-                                      <p className="text-[10px] text-slate-500 mt-1">You do not have any completed consultation records archived in this base.</p>
+                                      <p className="font-semibold text-xs text-slate-400">No {historyStatusFilter !== 'All' ? historyStatusFilter : ''} Visit Records Found</p>
+                                      <p className="text-[10px] text-slate-500 mt-1">You do not have any consultation records matching the filter.</p>
                                     </div>
                                   ) : (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                      {completedVisits.map(visit => (
+                                      {filteredVisits.map(visit => (
                                         <div key={visit.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
                                           <div className="flex items-center justify-between text-[10px]">
                                             <span className="font-mono text-teal-400 font-semibold">{visit.id}</span>
@@ -3149,26 +3256,36 @@ export default function App() {
                     </div>
 
                     {/* Ledger search field */}
-                    <div className="relative max-w-xs w-full">
-                      <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-slate-400" />
-                      </span>
-                      <input 
-                        type="text"
-                        placeholder="Search consultations..."
-                        value={appointmentSearchQuery}
-                        onChange={(e) => setAppointmentSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 border border-slate-300 dark:border-slate-800 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all font-mono"
-                        id="input-sched-search"
-                      />
-                      {appointmentSearchQuery && (
-                        <button 
-                          onClick={() => setAppointmentSearchQuery('')}
-                          className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-rose-600 text-[10px] font-semibold cursor-pointer"
-                        >
-                          Reset
-                        </button>
-                      )}
+                    <div className="flex items-center gap-2 max-w-xs w-full lg:max-w-md">
+                      <div className="relative flex-1">
+                        <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Search className="h-4 w-4 text-slate-400" />
+                        </span>
+                        <input 
+                          type="text"
+                          placeholder="Search consultations..."
+                          value={appointmentSearchQuery}
+                          onChange={(e) => setAppointmentSearchQuery(e.target.value)}
+                          className="w-full pl-9 pr-4 py-2 border border-slate-300 dark:border-slate-800 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-teal-500 transition-all font-mono"
+                          id="input-sched-search"
+                        />
+                        {appointmentSearchQuery && (
+                          <button 
+                            onClick={() => setAppointmentSearchQuery('')}
+                            className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-rose-600 text-[10px] font-semibold cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <button
+                        onClick={downloadAppointmentsCSV}
+                        className="inline-flex shrink-0 items-center space-x-1.5 px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                        title="Download currently filtered schedule as a CSV spreadsheet"
+                      >
+                        <Download className="h-3.5 w-3.5 text-slate-500" />
+                        <span className="hidden sm:inline">Download Schedule</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -3302,6 +3419,16 @@ export default function App() {
                                 className="px-2.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer shadow-xs transition"
                               >
                                 Mark Completed
+                              </button>
+                            )}
+                            {(apt.status === 'Pending' || apt.status === 'Confirmed') && (
+                              <button 
+                                onClick={() => {
+                                  alert(`An email notification has been sent to ${apt.patientName} reminding them of their appointment.`);
+                                }}
+                                className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer transition"
+                              >
+                                Remind Patient
                               </button>
                             )}
                             {(apt.status === 'Pending' || apt.status === 'Confirmed') && (

@@ -13,7 +13,7 @@ import {
   Brush
 } from 'recharts';
 import { Appointment, Patient } from '../types';
-import { Heart, Activity, Thermometer, Plus, X, Download } from 'lucide-react';
+import { Heart, Activity, Thermometer, Plus, X, Download, RotateCcw } from 'lucide-react';
 import { initialPatients } from '../data';
 
 interface PatientVitalsChartProps {
@@ -33,6 +33,8 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
   // 1. Comparison States
   const [comparisonMode, setComparisonMode] = useState(false);
   const [comparePatientId, setComparePatientId] = useState<string>('');
+  const [showThresholds, setShowThresholds] = useState(true);
+  const [chartKey, setChartKey] = useState(0);
 
   // Get active allPatients list
   const activeAllPatients = allPatients || initialPatients;
@@ -164,6 +166,13 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
   const maxSys = validSysValues.length > 0 ? Math.max(...validSysValues) : 130;
   const minDia = validDiaValues.length > 0 ? Math.min(...validDiaValues) : 70;
 
+  // Calculate averages across all uniqueRecords of the patient
+  const recordCount = uniqueRecords.length;
+  const avgSys = recordCount > 0 ? Math.round(uniqueRecords.reduce((sum, r) => sum + r.bpSys, 0) / recordCount) : 0;
+  const avgDia = recordCount > 0 ? Math.round(uniqueRecords.reduce((sum, r) => sum + r.bpDia, 0) / recordCount) : 0;
+  const avgHR = recordCount > 0 ? Math.round(uniqueRecords.reduce((sum, r) => sum + r.heartRate, 0) / recordCount) : 0;
+  const avgTemp = recordCount > 0 ? parseFloat((uniqueRecords.reduce((sum, r) => sum + r.temperature, 0) / recordCount).toFixed(1)) : 0;
+
   const handleDownloadCSV = () => {
     // Generate CSV export for BP, HR, Temp of the patient
     const headers = ["Date", "Systolic BP(mmHg)", "Diastolic BP(mmHg)", "Heart Rate(bpm)", "Temperature(F)"];
@@ -245,6 +254,19 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {/* Show/Hide clinical thresholds toggle */}
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-[10px] font-mono">
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200 select-none">
+                <input 
+                  type="checkbox" 
+                  checked={showThresholds}
+                  onChange={(e) => setShowThresholds(e.target.checked)}
+                  className="rounded border-slate-700 bg-slate-950 text-teal-550 focus:ring-0 cursor-pointer h-3.5 w-3.5 animate-pulse"
+                />
+                <span>Threshold annotations</span>
+              </label>
+            </div>
+
             {/* Comparison Benchmarking Selector */}
             <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-[10px] font-mono">
               <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
@@ -276,6 +298,15 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
             </div>
 
             <button
+              onClick={() => setChartKey(prev => prev + 1)}
+              className="inline-flex items-center gap-1 border border-slate-800 hover:border-slate-700 bg-slate-900/80 hover:bg-slate-850 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-all animate-fade-in"
+              title="Reset zoom or brush selection state back to original historical view limits"
+            >
+              <RotateCcw className="h-3 w-3 animate-spin duration-1000" />
+              <span>Reset View</span>
+            </button>
+
+            <button
               onClick={handleDownloadCSV}
               className="inline-flex items-center gap-1 border border-slate-800 hover:border-slate-700 bg-slate-900/80 hover:bg-slate-850 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-all animate-fade-in"
               title="Download Vitals CSV"
@@ -287,6 +318,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               <button
                 onClick={() => setIsModalOpen(true)}
                 className="inline-flex items-center space-x-1 border border-teal-800/60 bg-teal-900/30 hover:bg-teal-800/40 text-teal-400 px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-colors"
+                title="Add manual clinical vitals record"
               >
                 <Plus className="h-3 w-3" />
                 <span>Add Vital</span>
@@ -295,7 +327,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
           </div>
         </div>
 
-        <div className="h-[210px] w-full" id="vitals-recharts-chart-wrapper">
+        <div key={chartKey} className="h-[210px] w-full transition-all duration-300 hover:scale-[1.015] hover:shadow-xl hover:shadow-teal-900/10 p-1 border border-transparent hover:border-slate-800/80 rounded-xl" id="vitals-recharts-chart-wrapper">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
               data={combinedChartData}
@@ -315,18 +347,22 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.03 } as any)} />
               
               {/* Peak and valley annotations directly annotated on the chart */}
-              <ReferenceLine 
-                y={maxSys} 
-                stroke="#f43f5e" 
-                strokeDasharray="4 4" 
-                label={{ value: `Peak Sys: ${maxSys} mmHg`, fill: '#f43f5e', fontSize: 9, position: 'insideTopLeft', fontWeight: 'bold' }} 
-              />
-              <ReferenceLine 
-                y={minDia} 
-                stroke="#3b82f6" 
-                strokeDasharray="4 4" 
-                label={{ value: `Valley Dia: ${minDia} mmHg`, fill: '#3b82f6', fontSize: 9, position: 'insideBottomLeft', fontWeight: 'bold' }} 
-              />
+              {showThresholds && (
+                <>
+                  <ReferenceLine 
+                    y={maxSys} 
+                    stroke="#f43f5e" 
+                    strokeDasharray="4 4" 
+                    label={{ value: `Peak Sys: ${maxSys} mmHg`, fill: '#f43f5e', fontSize: 9, position: 'insideTopLeft', fontWeight: 'bold' }} 
+                  />
+                  <ReferenceLine 
+                    y={minDia} 
+                    stroke="#3b82f6" 
+                    strokeDasharray="4 4" 
+                    label={{ value: `Valley Dia: ${minDia} mmHg`, fill: '#3b82f6', fontSize: 9, position: 'insideBottomLeft', fontWeight: 'bold' }} 
+                  />
+                </>
+              )}
 
               <XAxis 
                 dataKey="displayDate" 
@@ -519,6 +555,71 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               <div className="space-y-0.5">
                 <span className="block text-slate-300 font-bold">Arterial Alert / Critical</span>
                 <span className="block text-slate-500">Sys &gt;140 | Dia &gt;90 | HR &gt;120 / &lt;50</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Latest vs Average Clinical Summary Box */}
+          <div className="bg-slate-900/40 p-3 rounded-lg border border-slate-900/80 space-y-2 mt-2" id="vitals-comparison-summary-box">
+            <p className="text-[10px] font-bold text-slate-400 uppercase font-mono tracking-wider flex items-center justify-between">
+              <span>🩺 Clinical Summary: Latest vs Baseline Averages</span>
+              <span className="text-[9px] lowercase font-normal italic text-slate-500">(based on {recordCount} records)</span>
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
+              <div className="bg-slate-950 p-2 rounded border border-slate-900 space-y-1">
+                <span className="text-[9px] text-slate-500 block font-bold">SYSTOLIC BP</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200">{latestRecord.bpSys} mmHg</span>
+                  <span className="text-slate-500 text-[10px]">Avg: {avgSys}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-900/60">
+                  <span className="text-slate-550">Variance:</span>
+                  <span className={`font-bold ${(latestRecord.bpSys - avgSys) > 0 ? (latestRecord.bpSys > 130 ? 'text-rose-400' : 'text-amber-400') : 'text-emerald-400'}`}>
+                    {(latestRecord.bpSys - avgSys) >= 0 ? `+${latestRecord.bpSys - avgSys}` : (latestRecord.bpSys - avgSys)} mmHg
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-2 rounded border border-slate-900 space-y-1">
+                <span className="text-[9px] text-slate-500 block font-bold">DIASTOLIC BP</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200">{latestRecord.bpDia} mmHg</span>
+                  <span className="text-slate-500 text-[10px]">Avg: {avgDia}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-900/60">
+                  <span className="text-slate-550">Variance:</span>
+                  <span className={`font-bold ${(latestRecord.bpDia - avgDia) > 0 ? (latestRecord.bpDia > 85 ? 'text-rose-400' : 'text-amber-400') : 'text-emerald-400'}`}>
+                    {(latestRecord.bpDia - avgDia) >= 0 ? `+${latestRecord.bpDia - avgDia}` : (latestRecord.bpDia - avgDia)} mmHg
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-2 rounded border border-slate-900 space-y-1">
+                <span className="text-[9px] text-slate-500 block font-bold">PULSE RATE</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-emerald-400">{latestRecord.heartRate} bpm</span>
+                  <span className="text-slate-500 text-[10px]">Avg: {avgHR}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-900/60">
+                  <span className="text-slate-550">Variance:</span>
+                  <span className={`font-bold ${Math.abs(latestRecord.heartRate - avgHR) > 10 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                    {(latestRecord.heartRate - avgHR) >= 0 ? `+${latestRecord.heartRate - avgHR}` : (latestRecord.heartRate - avgHR)} bpm
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-2 rounded border border-slate-900 space-y-1">
+                <span className="text-[9px] text-slate-500 block font-bold">BODY TEMP</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-amber-400">{latestRecord.temperature} °F</span>
+                  <span className="text-slate-500 text-[10px]">Avg: {avgTemp}</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] pt-0.5 border-t border-slate-900/60">
+                  <span className="text-slate-550">Variance:</span>
+                  <span className={`font-bold ${Math.abs(latestRecord.temperature - avgTemp) > 1.0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                    {(latestRecord.temperature - avgTemp) >= 0 ? `+${parseFloat((latestRecord.temperature - avgTemp).toFixed(1))}` : parseFloat((latestRecord.temperature - avgTemp).toFixed(1))} °F
+                  </span>
+                </div>
               </div>
             </div>
           </div>

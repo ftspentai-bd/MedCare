@@ -179,6 +179,9 @@ export default function App() {
   // Active status filter state: 'all' | 'urgent' | 'recent'
   const [statusFilter, setStatusFilter] = useState<'all' | 'urgent' | 'recent'>('all');
 
+  // Age range filter
+  const [ageRange, setAgeRange] = useState<[number, number]>([0, 120]);
+
   // Sort order by Urgency Status: null | 'asc' | 'desc'
   const [urgencySortOrder, setUrgencySortOrder] = useState<'asc' | 'desc' | null>(null);
 
@@ -193,6 +196,38 @@ export default function App() {
   const [schedError, setSchedError] = useState('');
   const [schedOverrideConflict, setSchedOverrideConflict] = useState(false);
   const [schedIsRecurring, setSchedIsRecurring] = useState(false);
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
+
+  // Auto-logout feature for security
+  React.useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    
+    const resetTimer = () => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => {
+        setIsAuthenticated(false);
+        setUserRole('patient');
+        sessionStorage.removeItem('is_authenticated');
+        sessionStorage.removeItem('user_role');
+      }, 15 * 60 * 1000); // 15 minutes
+    };
+
+    if (isAuthenticated) {
+      window.addEventListener('mousemove', resetTimer);
+      window.addEventListener('keydown', resetTimer);
+      window.addEventListener('click', resetTimer);
+      window.addEventListener('scroll', resetTimer);
+      resetTimer();
+    }
+
+    return () => {
+      clearTimeout(timeout);
+      window.removeEventListener('mousemove', resetTimer);
+      window.removeEventListener('keydown', resetTimer);
+      window.removeEventListener('click', resetTimer);
+      window.removeEventListener('scroll', resetTimer);
+    };
+  }, [isAuthenticated]);
 
   // Patient form states
   const [isFormOpen, setIsFormOpen] = useState<boolean>(() => {
@@ -445,6 +480,10 @@ export default function App() {
 
     if (!matchesSearch) return false;
 
+    // Filter by age range
+    const age = calculateAge(patient.dateOfBirth);
+    if (age < ageRange[0] || age > ageRange[1]) return false;
+
     // 2. Filtered by selected Status Filter toggle pill
     if (statusFilter === 'urgent') {
       return patient.taskStatus === 'Urgent';
@@ -600,54 +639,67 @@ export default function App() {
 
     // Force validation check to warn if a doctor is already booked in that slot
     const conflict = getDoctorConflict();
-    if (conflict && !schedOverrideConflict) {
+    if (conflict && !schedOverrideConflict && (!editingAppointmentId || conflict.id !== editingAppointmentId)) {
       setSchedError(`Schedule Conflict: Dr. ${doctor.name} already has a consultation scheduled for ${new Date(conflict.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} (Patient: ${conflict.patientName}). Please choose another slot, or check the override option below.`);
       return;
     }
 
-    const newAppointments: Appointment[] = [];
-    const primaryAptId = `APT-2026-${Math.floor(200 + Math.random() * 800)}`;
-    const primaryApt: Appointment = {
-      id: primaryAptId,
-      patientId: patient.id,
-      patientName: patient.name,
-      doctorId: doctor.id,
-      doctorName: doctor.name,
-      dateTime: schedDateTime,
-      status: schedStatus,
-      notes: schedNotes || "Routine spec consultation scheduled.",
-      createdAt: new Date().toISOString()
-    };
-    newAppointments.push(primaryApt);
+    if (editingAppointmentId) {
+      setAppointments(prev => prev.map(a => a.id === editingAppointmentId ? {
+        ...a,
+        patientId: patient.id,
+        patientName: patient.name,
+        doctorId: doctor.id,
+        doctorName: doctor.name,
+        dateTime: schedDateTime,
+        status: schedStatus,
+        notes: schedNotes || "Routine spec consultation scheduled."
+      } : a));
+    } else {
+      const newAppointments: Appointment[] = [];
+      const primaryAptId = `APT-2026-${Math.floor(200 + Math.random() * 800)}`;
+      const primaryApt: Appointment = {
+        id: primaryAptId,
+        patientId: patient.id,
+        patientName: patient.name,
+        doctorId: doctor.id,
+        doctorName: doctor.name,
+        dateTime: schedDateTime,
+        status: schedStatus,
+        notes: schedNotes || "Routine spec consultation scheduled.",
+        createdAt: new Date().toISOString()
+      };
+      newAppointments.push(primaryApt);
 
-    if (schedIsRecurring) {
-      const baseDate = new Date(schedDateTime);
-      for (let i = 1; i <= 3; i++) {
-        const futureDate = new Date(baseDate);
-        futureDate.setMonth(baseDate.getMonth() + i);
-        
-        const yyyy = futureDate.getFullYear();
-        const mm = String(futureDate.getMonth() + 1).padStart(2, '0');
-        const dd = String(futureDate.getDate()).padStart(2, '0');
-        const hh = String(futureDate.getHours()).padStart(2, '0');
-        const minNum = String(futureDate.getMinutes()).padStart(2, '0');
-        const formattedFutureString = `${yyyy}-${mm}-${dd}T${hh}:${minNum}`;
+      if (schedIsRecurring) {
+        const baseDate = new Date(schedDateTime);
+        for (let i = 1; i <= 3; i++) {
+          const futureDate = new Date(baseDate);
+          futureDate.setMonth(baseDate.getMonth() + i);
+          
+          const yyyy = futureDate.getFullYear();
+          const mm = String(futureDate.getMonth() + 1).padStart(2, '0');
+          const dd = String(futureDate.getDate()).padStart(2, '0');
+          const hh = String(futureDate.getHours()).padStart(2, '0');
+          const minNum = String(futureDate.getMinutes()).padStart(2, '0');
+          const formattedFutureString = `${yyyy}-${mm}-${dd}T${hh}:${minNum}`;
 
-        newAppointments.push({
-          id: `APT-2026-${Math.floor(200 + Math.random() * 800)}-R${i}`,
-          patientId: patient.id,
-          patientName: patient.name,
-          doctorId: doctor.id,
-          doctorName: doctor.name,
-          dateTime: formattedFutureString,
-          status: schedStatus,
-          notes: `${schedNotes || "Routine spec consultation scheduled."} (Recurring Monthly Session ${i}/3)`,
-          createdAt: new Date().toISOString()
-        });
+          newAppointments.push({
+            id: `APT-2026-${Math.floor(200 + Math.random() * 800)}-R${i}`,
+            patientId: patient.id,
+            patientName: patient.name,
+            doctorId: doctor.id,
+            doctorName: doctor.name,
+            dateTime: formattedFutureString,
+            status: schedStatus,
+            notes: `${schedNotes || "Routine spec consultation scheduled."} (Recurring Monthly Session ${i}/3)`,
+            createdAt: new Date().toISOString()
+          });
+        }
       }
-    }
 
-    setAppointments(prev => [...newAppointments, ...prev]);
+      setAppointments(prev => [...newAppointments, ...prev]);
+    }
     
     // Reset form states
     setSchedPatientId('');
@@ -656,6 +708,7 @@ export default function App() {
     setSchedNotes('');
     setSchedOverrideConflict(false);
     setSchedIsRecurring(false);
+    setEditingAppointmentId(null);
     setIsSchedFormOpen(false);
   };
 
@@ -1050,10 +1103,21 @@ export default function App() {
           <button
             onClick={() => setDarkMode(!darkMode)}
             id="global-theme-toggle"
-            className="p-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer shadow-xs"
+            className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg transition-colors border border-slate-200 dark:border-slate-700 cursor-pointer shadow-xs relative overflow-hidden"
             title="Toggle Application Theme Mode (Light / Dark)"
           >
-            {darkMode ? <Sun className="h-4.5 w-4.5 text-amber-500 shrink-0" /> : <Moon className="h-4.5 w-4.5 text-indigo-600 shrink-0" />}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div
+                key={darkMode ? "dark" : "light"}
+                initial={{ y: -20, opacity: 0, rotate: -45 }}
+                animate={{ y: 0, opacity: 1, rotate: 0 }}
+                exit={{ y: 20, opacity: 0, rotate: 45 }}
+                transition={{ duration: 0.2 }}
+                className="absolute inset-0 flex items-center justify-center"
+              >
+                {darkMode ? <Sun className="h-4.5 w-4.5 text-amber-500 shrink-0" /> : <Moon className="h-4.5 w-4.5 text-indigo-600 shrink-0" />}
+              </motion.div>
+            </AnimatePresence>
           </button>
           
           <button
@@ -2242,37 +2306,64 @@ export default function App() {
                       </div>
 
                       {/* Status filter toggles Group and CSV export */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-900 p-0.5" role="group">
+                      <div className="flex flex-col xl:flex-row xl:items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-900 p-0.5" role="group">
+                            <button
+                              onClick={() => setStatusFilter('all')}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${statusFilter === 'all' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
+                            >
+                              All Profiles
+                            </button>
+                            <button
+                              onClick={() => setStatusFilter('urgent')}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center space-x-1 ${statusFilter === 'urgent' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
+                            >
+                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+                              <span>Urgent Tasks</span>
+                            </button>
+                            <button
+                              onClick={() => setStatusFilter('recent')}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${statusFilter === 'recent' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
+                            >
+                              Recent Visits
+                            </button>
+                          </div>
+
                           <button
-                            onClick={() => setStatusFilter('all')}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${statusFilter === 'all' ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
+                            onClick={downloadPatientsCSV}
+                            className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
+                            title="Download currently filtered list as a CSV spreadsheet"
                           >
-                            All Profiles
-                          </button>
-                          <button
-                            onClick={() => setStatusFilter('urgent')}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer flex items-center space-x-1 ${statusFilter === 'urgent' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
-                          >
-                            <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-pulse"></span>
-                            <span>Urgent Tasks</span>
-                          </button>
-                          <button
-                            onClick={() => setStatusFilter('recent')}
-                            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${statusFilter === 'recent' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:hover:text-slate-200'}`}
-                          >
-                            Recent Visits
+                            <Download className="h-3.5 w-3.5 text-slate-500" />
+                            <span>Download CSV</span>
                           </button>
                         </div>
-
-                        <button
-                          onClick={downloadPatientsCSV}
-                          className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
-                          title="Download currently filtered list as a CSV spreadsheet"
-                        >
-                          <Download className="h-3.5 w-3.5 text-slate-500" />
-                          <span>Download CSV</span>
-                        </button>
+                        
+                        <div className="flex items-center space-x-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 px-3 py-1 rounded-lg">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider font-mono">Age</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono w-4 text-right">{ageRange[0]}</span>
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="120" 
+                              value={ageRange[0]} 
+                              onChange={(e) => setAgeRange([Math.min(Number(e.target.value), ageRange[1]), ageRange[1]])}
+                              className="w-16 accent-teal-600 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer hidden md:block"
+                            />
+                            <span className="text-slate-300 dark:text-slate-600">-</span>
+                            <input 
+                              type="range" 
+                              min="0" 
+                              max="120" 
+                              value={ageRange[1]} 
+                              onChange={(e) => setAgeRange([ageRange[0], Math.max(Number(e.target.value), ageRange[0])])}
+                              className="w-16 accent-teal-600 h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer hidden md:block"
+                            />
+                            <span className="text-[10px] text-slate-600 dark:text-slate-400 font-mono w-6">{ageRange[1]}</span>
+                          </div>
+                        </div>
                       </div>
 
                       <span className="text-xs text-slate-500 font-mono tracking-wider uppercase font-semibold">
@@ -2985,6 +3076,12 @@ export default function App() {
                   <button 
                     disabled={userRole === 'patient'}
                     onClick={() => {
+                      setSchedPatientId('');
+                      setSchedDoctorId('');
+                      setSchedDateTime('');
+                      setSchedNotes('');
+                      setSchedStatus('Pending');
+                      setEditingAppointmentId(null);
                       setIsSchedFormOpen(true);
                       setSchedError('');
                     }}
@@ -3011,11 +3108,19 @@ export default function App() {
                         <Calendar className="h-4 w-4" />
                       </div>
                       <h3 className="font-bold text-slate-900 text-sm">
-                        Schedule Clinical Consultation
+                        {editingAppointmentId ? 'Reschedule Clinical Consultation' : 'Schedule Clinical Consultation'}
                       </h3>
                     </div>
                     <button 
-                      onClick={() => setIsSchedFormOpen(false)}
+                      onClick={() => {
+                        setIsSchedFormOpen(false);
+                        setEditingAppointmentId(null);
+                        setSchedPatientId('');
+                        setSchedDoctorId('');
+                        setSchedDateTime('');
+                        setSchedNotes('');
+                        setSchedStatus('Pending');
+                      }}
                       className="text-slate-400 hover:text-slate-600 text-xs font-semibold cursor-pointer"
                     >
                       Close (X)
@@ -3188,7 +3293,15 @@ export default function App() {
                     <div className="flex items-center justify-end space-x-3 border-t border-slate-100 pt-4 font-sans">
                       <button 
                         type="button" 
-                        onClick={() => setIsSchedFormOpen(false)}
+                        onClick={() => {
+                          setIsSchedFormOpen(false);
+                          setEditingAppointmentId(null);
+                          setSchedPatientId('');
+                          setSchedDoctorId('');
+                          setSchedDateTime('');
+                          setSchedNotes('');
+                          setSchedStatus('Pending');
+                        }}
                         className="px-4 py-2 text-xs font-semibold text-slate-505 hover:text-slate-800 transition-colors uppercase cursor-pointer"
                       >
                         Cancel
@@ -3197,7 +3310,7 @@ export default function App() {
                         type="submit" 
                         className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors cursor-pointer animate-pulse"
                       >
-                        Confirm Booking Specification
+                        {editingAppointmentId ? 'Confirm Reschedule' : 'Confirm Booking Specification'}
                       </button>
                     </div>
 
@@ -3429,6 +3542,23 @@ export default function App() {
                                 className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer transition"
                               >
                                 Remind Patient
+                              </button>
+                            )}
+                            {(apt.status === 'Pending' || apt.status === 'Confirmed') && (
+                              <button 
+                                onClick={() => {
+                                  setSchedPatientId(apt.patientId);
+                                  setSchedDoctorId(apt.doctorId || '');
+                                  setSchedDateTime(apt.dateTime);
+                                  setSchedNotes(apt.notes || '');
+                                  setSchedStatus(apt.status as any);
+                                  setEditingAppointmentId(apt.id);
+                                  setIsSchedFormOpen(true);
+                                  document.getElementById('main-content')?.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer transition"
+                              >
+                                Reschedule
                               </button>
                             )}
                             {(apt.status === 'Pending' || apt.status === 'Confirmed') && (

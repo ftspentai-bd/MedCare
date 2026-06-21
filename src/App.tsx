@@ -58,6 +58,7 @@ import { QuickNotesFAB } from './components/QuickNotesFAB';
 import { PatientMedications } from './components/PatientMedications';
 import PaymentModule from './components/PaymentModule';
 import LandingPage from './components/LandingPage';
+import { jsPDF } from 'jspdf';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line } from 'recharts';
 
@@ -684,7 +685,14 @@ export default function App() {
       if (a.taskStatus !== 'Urgent' && b.taskStatus === 'Urgent') return -1;
       return 0;
     }
-    return 0;
+    
+    // Automatically rank patients by calculated 'Triage Priority' score combining urgency status and recent critical vital readings.
+    const scoreA = getPatientPriorityScore(a);
+    const scoreB = getPatientPriorityScore(b);
+    if (scoreB !== scoreA) {
+      return scoreB - scoreA; // High priority scores automatically hover to the top
+    }
+    return a.name.localeCompare(b.name);
   });
 
   // Client-side utility function to trigger CSV file download for filtered patient list
@@ -906,60 +914,135 @@ export default function App() {
     `pb-1 px-1 font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${isActive ? 'border-b-2 border-teal-500 text-teal-600 dark:text-teal-400 font-bold' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`;
 
   const handleExportHistoryPDF = (pat: Patient) => {
-    const printWindow = window.open('', '', 'height=800,width=800');
-    if (!printWindow) return;
+    const doc = new jsPDF();
+    
+    // Set up header
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42); // slate-900
+    doc.text("CONSOLIDATED CLINICAL HISTORY REPORT", 14, 20);
+    
+    doc.setLineWidth(0.5);
+    doc.setDrawColor(203, 213, 225); // slate-300
+    doc.line(14, 24, 196, 24);
+    
+    // Demographic information
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text("1. Demographics & Patient Profile", 14, 33);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105); // slate-600
+    
+    doc.text(`Patient Name: ${pat.name}`, 14, 40);
+    doc.text(`Patient ID: ${pat.id}`, 14, 46);
+    doc.text(`Date of Birth: ${pat.dateOfBirth} (${calculateAge(pat.dateOfBirth)} years old)`, 14, 52);
+    doc.text(`Gender: ${pat.gender}`, 14, 58);
+    doc.text(`Blood Group: ${pat.bloodGroup}`, 14, 64);
+    doc.text(`Primary Contact: ${pat.contact}`, 14, 70);
+    doc.text(`Correspondence Address: ${pat.address || 'No registered home address specified'}`, 14, 76);
+    
+    // Emergency Contact
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Emergency Protocols", 14, 85);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Guardian / Relative: ${pat.emergencyContactName || 'N/A'}`, 14, 91);
+    doc.text(`Emergency Contact Phone: ${pat.emergencyContactPhone || 'N/A'}`, 14, 97);
+    
+    // Persistent Clinical Notes
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text("2. Persistent Clinical Notes & General Narrative", 14, 107);
+    
+    doc.setFont("Helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(51, 65, 85);
+    const clinicalNotesLines = doc.splitTextToSize(pat.clinicalNotes || "No persistent general clinical notes or narrative recorded.", 182);
+    doc.text(clinicalNotesLines, 14, 113);
+    
+    let y = 113 + (clinicalNotesLines.length * 5) + 10;
+    
+    // Visit History details
+    doc.setFont("Helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(15, 23, 42);
+    doc.text("3. Recorded Visit History & Consultation Notes", 14, y);
+    
+    y += 5;
+    doc.setLineWidth(0.3);
+    doc.setDrawColor(226, 232, 240); // slate-200
+    doc.line(14, y, 196, y);
+    y += 8;
     
     const patHistory = appointments.filter(a => a.patientId === pat.id).sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
-
-    const receiptHtml = `
-      <html>
-        <head>
-          <title>Full Medical History - ${pat.name}</title>
-          <style>
-            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; }
-            h1 { text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 20px; font-size: 24px; color: #0f172a; }
-            h2 { font-size: 18px; color: #334155; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
-            .label { font-weight: bold; color: #64748b; font-size: 14px; }
-            .value { font-weight: 500; font-size: 14px; text-align: right; }
-            .visit-card { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; border-radius: 8px; margin-top: 15px; page-break-inside: avoid; }
-            .visit-title { font-weight: bold; font-size: 16px; margin-bottom: 10px; color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; }
-            .notes { margin-top: 10px; font-size: 14px; white-space: pre-wrap; font-family: monospace; color: #334155; }
-          </style>
-        </head>
-        <body>
-          <h1>Complete Patient Medical History</h1>
-          
-          <h2>Demographics</h2>
-          <div class="row"><span class="label">Patient Name:</span> <span class="value">${pat.name}</span></div>
-          <div class="row"><span class="label">Patient ID:</span> <span class="value">${pat.id}</span></div>
-          <div class="row"><span class="label">Date of Birth:</span> <span class="value">${pat.dateOfBirth}</span></div>
-          <div class="row"><span class="label">Blood Group:</span> <span class="value">${pat.bloodGroup}</span></div>
-          
-          <h2>Clinical Narrative (Persistent)</h2>
-          <div class="visit-card" style="background-color: #f1f5f9; white-space: pre-wrap;">${pat.clinicalNotes || 'No persistent clinical notes.'}</div>
-          
-          <h2>Recorded Visit History</h2>
-          ${patHistory.length > 0 ? patHistory.map(apt => `
-            <div class="visit-card">
-              <div class="visit-title">${new Date(apt.dateTime).toLocaleDateString()} at ${new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${apt.type} [${apt.status}]</div>
-              <div class="row"><span class="label">Attending Doctor:</span> <span class="value">${apt.doctorName || 'N/A'}</span></div>
-              <div style="margin-top: 15px; font-weight: bold; color: #64748b;">Consultation Notes:</div>
-              <div class="notes">${apt.notes || 'No consultation notes recorded for this visit.'}</div>
-            </div>
-          `).join('') : '<p style="font-size: 14px; color: #64748b;">No visits recorded.</p>'}
-          
-          <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 20px;">
-            Confidential Medical Record. Generated on ${new Date().toLocaleString()}
-          </div>
-        </body>
-      </html>
-    `;
-    printWindow.document.write(receiptHtml);
-    printWindow.document.close();
-    setTimeout(() => {
-      printWindow.print();
-    }, 250);
+    
+    if (patHistory.length === 0) {
+      doc.setFont("Helvetica", "italic");
+      doc.setFontSize(10);
+      doc.text("No past visit historical records detected for this patient profile.", 14, y);
+    } else {
+      patHistory.forEach((apt) => {
+        // Prepare lines of text to calculate height first
+        const noteLines = doc.splitTextToSize(apt.notes || 'No consultation notes recorded for this medical visit.', 180);
+        const cardHeight = 25 + (noteLines.length * 5);
+        
+        // Check for page overflow
+        if (y + cardHeight > 265) {
+          doc.addPage();
+          y = 20;
+        }
+        
+        // Card border container
+        doc.setLineWidth(0.2);
+        doc.setDrawColor(203, 213, 225);
+        doc.line(14, y, 196, y); // Top border
+        
+        y += 6;
+        doc.setFont("Helvetica", "bold");
+        doc.setFontSize(11);
+        doc.setTextColor(13, 148, 136); // teal-600
+        const dateStr = new Date(apt.dateTime).toLocaleDateString() + " at " + new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        doc.text(`${dateStr} - ${apt.type} [${apt.status}]`, 14, y);
+        
+        y += 5;
+        doc.setFont("Helvetica", "normal");
+        doc.setFontSize(10);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Attending Doctor Coordinate: ${apt.doctorName || 'N/A'}`, 14, y);
+        
+        y += 5;
+        doc.setFont("Helvetica", "bold");
+        doc.setTextColor(71, 85, 105);
+        doc.text("Session Narrative / Consultation Notes:", 14, y);
+        
+        y += 5;
+        doc.setFont("Helvetica", "normal");
+        doc.setTextColor(51, 65, 85);
+        doc.text(noteLines, 14, y);
+        
+        y += (noteLines.length * 5) + 6;
+      });
+    }
+    
+    // Header & Footer for all pages
+    const pageCount = (doc as any).internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFont("Helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184); // slate-400
+      doc.text(`CareSync Electronic Health Archive • Confidential Patient Record • Generated ${new Date().toLocaleString()}`, 14, 287);
+      doc.text(`Page ${i} of ${pageCount}`, 175, 287);
+    }
+    
+    doc.save(`clinical-history-${pat.id}.pdf`);
   };
 
   const printPatientSummary = (pat: Patient) => {
@@ -3219,8 +3302,8 @@ export default function App() {
                                         </div>
                                       )}
                                       {getPatientPriorityScore(patient) > 0 && (
-                                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight flex items-center gap-0.5 ${getPatientPriorityScore(patient) >= 100 ? 'bg-rose-100 dark:bg-rose-900/50 border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-400' : 'bg-amber-100 dark:bg-amber-900/50 border-amber-300 dark:border-amber-700 text-amber-700 dark:text-amber-400'}`} title={`Triage Priority Score: ${getPatientPriorityScore(patient)}`}>
-                                          Triage P-{(200 - getPatientPriorityScore(patient))}
+                                        <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border uppercase tracking-tight flex items-center gap-0.5 ${getPatientPriorityScore(patient) >= 100 ? 'bg-rose-100 dark:bg-rose-900/50 border-rose-300 dark:border-rose-750 text-rose-700 dark:text-rose-450' : 'bg-amber-105 dark:bg-amber-900/40 border-amber-305 dark:border-amber-750 text-amber-800 dark:text-amber-450'}`} title={`Triage Priority Score: ${getPatientPriorityScore(patient)}`}>
+                                          Triage P-{getPatientPriorityScore(patient) >= 100 ? '1' : '2'} ({getPatientPriorityScore(patient)} pts)
                                         </span>
                                       )}
                                       {hasHealthAlert(patient) && patient.taskStatus !== 'Urgent' && (

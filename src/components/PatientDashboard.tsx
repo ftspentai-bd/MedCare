@@ -35,6 +35,118 @@ interface PatientDashboardProps {
   setAppointments?: React.Dispatch<React.SetStateAction<Appointment[]>>;
 }
 
+function AppointmentCountdown({ appointment }: { appointment: Appointment }) {
+  const [timeLeft, setTimeLeft] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+
+  useEffect(() => {
+    const targetTime = new Date(appointment.dateTime).getTime();
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const difference = targetTime - now;
+
+      if (difference <= 0) {
+        setTimeLeft(null);
+        return;
+      }
+
+      const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+
+      setTimeLeft({ days, hours, minutes, seconds });
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [appointment.dateTime]);
+
+  if (!timeLeft) {
+    return (
+      <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 p-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 border border-amber-500/20">
+        <Clock className="w-4 h-4 animate-pulse text-amber-505" />
+        <span>Your session is starting now or in progress!</span>
+      </div>
+    );
+  }
+
+  const handleCalendarDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const date = new Date(appointment.dateTime);
+    const end = new Date(date.getTime() + 30 * 60 * 1000);
+
+    const formatDateStr = (d: Date) => {
+      return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//CareSync//Clinical Operations Calendar//EN',
+      'BEGIN:VEVENT',
+      `UID:${appointment.id}`,
+      `DTSTAMP:${formatDateStr(new Date())}`,
+      `DTSTART:${formatDateStr(date)}`,
+      `DTEND:${formatDateStr(end)}`,
+      `SUMMARY:CareSync Appointment with ${appointment.doctorName}`,
+      `DESCRIPTION:Medical consultation with ${appointment.doctorName} - Note: ${appointment.notes || 'Routine checkup.'}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `appointment-${appointment.id}.ics`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="bg-gradient-to-br from-teal-600 to-emerald-700 text-white rounded-xl p-4 shadow-md space-y-3 border border-teal-500/30">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] uppercase font-mono tracking-wider font-extrabold bg-teal-950/40 px-2 py-0.5 rounded text-teal-200">
+          Next Visit Countdown
+        </span>
+        <button
+          onClick={handleCalendarDownload}
+          className="inline-flex items-center gap-1 bg-white/15 hover:bg-white/25 px-2 py-1 rounded text-[10px] font-bold font-mono transition cursor-pointer text-white"
+          title="Download calendar .ics file"
+        >
+          <Download className="w-3 h-3 text-white" />
+          <span>Add to Calendar</span>
+        </button>
+      </div>
+      <div>
+        <h4 className="text-xs font-bold text-teal-100">Consultation with {appointment.doctorName}</h4>
+        <p className="text-[10px] text-teal-200/90 mt-0.5 font-mono">{new Date(appointment.dateTime).toLocaleString()}</p>
+      </div>
+      <div className="grid grid-cols-4 gap-2 text-center text-white">
+        <div className="bg-teal-950/40 p-1.5 rounded">
+          <span className="block text-sm font-black font-mono">{timeLeft.days}</span>
+          <span className="text-[8px] uppercase tracking-wide text-teal-200">Days</span>
+        </div>
+        <div className="bg-teal-950/40 p-1.5 rounded">
+          <span className="block text-sm font-black font-mono">{timeLeft.hours.toString().padStart(2, '0')}</span>
+          <span className="text-[8px] uppercase tracking-wide text-teal-200">Hours</span>
+        </div>
+        <div className="bg-teal-950/40 p-1.5 rounded">
+          <span className="block text-sm font-black font-mono">{timeLeft.minutes.toString().padStart(2, '0')}</span>
+          <span className="text-[8px] uppercase tracking-wide text-teal-200">Mins</span>
+        </div>
+        <div className="bg-teal-950/40 p-1.5 rounded">
+          <span className="block text-sm font-black font-mono text-emerald-300">{timeLeft.seconds.toString().padStart(2, '0')}</span>
+          <span className="text-[8px] uppercase tracking-wide text-teal-200 font-bold">Secs</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Seed review database
 const initialReviews = [
   {
@@ -156,6 +268,8 @@ export default function PatientDashboard({
   const myAppointments = appointments
     .filter(apt => apt.patientId === currentPatient?.id && apt.status !== 'Cancelled')
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+
+  const upcomingAppointment = myAppointments.find(apt => new Date(apt.dateTime).getTime() > Date.now() && apt.status !== 'Completed');
 
   // Doctor detail lookup
   const selectedDoctor = doctors.find(d => d.id === selectedDoctorId) || doctors[0];
@@ -537,6 +651,10 @@ export default function PatientDashboard({
                   <span>Book</span>
                 </button>
               </div>
+
+              {upcomingAppointment && (
+                <AppointmentCountdown appointment={upcomingAppointment} />
+              )}
 
               {myAppointments.length === 0 ? (
                 <div className="text-center py-8 bg-slate-50 dark:bg-slate-950 rounded-lg">

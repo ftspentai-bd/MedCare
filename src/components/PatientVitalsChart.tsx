@@ -192,10 +192,13 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
-              <ReferenceArea {...({ y1: 90, y2: 120, fill: "#10b981", fillOpacity: 0.08 } as any)} /> {/* Safe Systolic range */}
-              <ReferenceArea {...({ y1: 120, y2: 140, fill: "#f59e0b", fillOpacity: 0.08 } as any)} /> {/* elevated border Systolic range */}
-              <ReferenceArea {...({ y1: 140, y2: 200, fill: "#f43f5e", fillOpacity: 0.08 } as any)} /> {/* Hypertension range */}
-              <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.05 } as any)} /> {/* Safe Diastolic range */}
+              {/* Heatmap overlay background zones */}
+              <ReferenceArea {...({ y1: 90, y2: 120, fill: "#10b981", fillOpacity: 0.06 } as any)} />
+              <ReferenceArea {...({ y1: 120, y2: 140, fill: "#eab308", fillOpacity: 0.06 } as any)} />
+              <ReferenceArea {...({ y1: 140, y2: 200, fill: "#f43f5e", fillOpacity: 0.06 } as any)} />
+              <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.04 } as any)} />
+              <ReferenceArea {...({ y1: 80, y2: 90, fill: "#eab308", fillOpacity: 0.03 } as any)} />
+              <ReferenceArea {...({ y1: 50, y2: 60, fill: "#ef4444", fillOpacity: 0.04 } as any)} />
               <XAxis 
                 dataKey="displayDate" 
                 stroke="#71717a" 
@@ -250,18 +253,46 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
           </ResponsiveContainer>
         </div>
 
-        <div className="flex items-center justify-center gap-6 text-[10px] font-mono text-slate-400 border-t border-slate-900 pt-2.5">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-1 rounded-full bg-rose-500 inline-block"></span>
-            <span>BP Systolic (mmHg)</span>
+        <div className="border-t border-slate-900 pt-3 space-y-2">
+          {/* Legend series */}
+          <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] font-mono text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-1 rounded-full bg-rose-500 inline-block"></span>
+              <span>BP Systolic (mmHg)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-1 rounded-full bg-blue-500 inline-block"></span>
+              <span>BP Diastolic (mmHg)</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2.5 h-1 rounded-full bg-emerald-500 inline-block"></span>
+              <span>Pulse (bpm)</span>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-1 rounded-full bg-blue-500 inline-block"></span>
-            <span>BP Diastolic (mmHg)</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-1 rounded-full bg-emerald-500 inline-block"></span>
-            <span>Pulse (bpm)</span>
+          
+          {/* Heatmap Range Indicators */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-900/50 p-2.5 rounded-lg border border-slate-900 text-[10px] font-mono">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded bg-[#10b981] opacity-75"></span>
+              <div className="space-y-0.5">
+                <span className="block text-slate-300 font-bold">Optimal / Safe</span>
+                <span className="block text-slate-500">Sys: 90-120 | Dia: 60-80 | HR: 60-100</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded bg-[#eab308] opacity-75"></span>
+              <div className="space-y-0.5">
+                <span className="block text-slate-300 font-bold">Warning / Elevated</span>
+                <span className="block text-slate-500">Sys: 120-140 | Dia: 80-90 | HR: 50-60/100-120</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded bg-[#f43f5e] opacity-75"></span>
+              <div className="space-y-0.5">
+                <span className="block text-slate-300 font-bold">Arterial Alert / Critical</span>
+                <span className="block text-slate-500">Sys &gt;140 | Dia &gt;90 | HR &gt;120 / &lt;50</span>
+              </div>
+            </div>
           </div>
         </div>
 

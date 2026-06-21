@@ -8,94 +8,101 @@ import {
   CartesianGrid, 
   Tooltip, 
   Legend,
-  ReferenceArea
+  ReferenceArea,
+  ReferenceLine,
+  Brush
 } from 'recharts';
 import { Appointment, Patient } from '../types';
 import { Heart, Activity, Thermometer, Plus, X, Download } from 'lucide-react';
+import { initialPatients } from '../data';
 
 interface PatientVitalsChartProps {
   patient: Patient;
   appointments: Appointment[];
   updatePatient?: (id: string, updates: Partial<Patient>) => void;
+  allPatients?: Patient[];
 }
 
-export default function PatientVitalsChart({ patient, appointments, updatePatient }: PatientVitalsChartProps) {
+export default function PatientVitalsChart({ patient, appointments, updatePatient, allPatients }: PatientVitalsChartProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newSys, setNewSys] = useState(120);
   const [newDia, setNewDia] = useState(80);
   const [newHR, setNewHR] = useState(72);
   const [newTemp, setNewTemp] = useState(98.6);
 
-  // Generate stable baseline clinical vitals uniquely hashed by the patientId
-  const seed = patient.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
-  // Baseline configurations based on patient unique seed
-  const baseSys = 115 + (seed % 15); // 115 - 130 mmHg
-  const baseDia = 75 + (seed % 10);  // 75 - 85 mmHg
-  const baseHR = 64 + (seed % 18);   // 64 - 82 beats/min
-  const baseTemp = 97.5 + ((seed % 12) / 10); // 97.5 - 98.7 °F
+  // 1. Comparison States
+  const [comparisonMode, setComparisonMode] = useState(false);
+  const [comparePatientId, setComparePatientId] = useState<string>('');
 
-  // Historical clinic benchmarks
-  const baselineData = [
-    { 
-      date: "2026-03-10", 
-      bpSys: baseSys - 4, 
-      bpDia: baseDia - 2, 
-      heartRate: baseHR - 3, 
-      temperature: parseFloat((baseTemp - 0.2).toFixed(1)) 
-    },
-    { 
-      date: "2026-04-12", 
-      bpSys: baseSys + 3, 
-      bpDia: baseDia + 4, 
-      heartRate: baseHR + 5, 
-      temperature: parseFloat((baseTemp + 0.3).toFixed(1)) 
-    },
-    { 
-      date: "2026-05-15", 
-      bpSys: baseSys - 1, 
-      bpDia: baseDia - 1, 
-      heartRate: baseHR + 1, 
-      temperature: parseFloat((baseTemp + 0.1).toFixed(1)) 
-    },
-  ];
+  // Get active allPatients list
+  const activeAllPatients = allPatients || initialPatients;
+  const otherPatients = activeAllPatients.filter(p => p.id !== patient.id);
+  const comparisonPatient = otherPatients.find(p => p.id === comparePatientId);
 
-  // Resolve actually completed appointments in state to append real live consultations
-  const completedVisits = appointments
-    .filter(a => a.patientId === patient.id && a.status === 'Completed')
-    .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+  // Helper to generate full parsed vitals records chronologically for any patient
+  const getPatientRecords = (p: Patient) => {
+    const pSeed = p.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const pBaseSys = 115 + (pSeed % 15); // 115 - 130 mmHg
+    const pBaseDia = 75 + (pSeed % 10);  // 75 - 85 mmHg
+    const pBaseHR = 64 + (pSeed % 18);   // 64 - 82 beats/min
+    const pBaseTemp = 97.5 + ((pSeed % 12) / 10); // 97.5 - 98.7 °F
 
-  // Merge the real appointments into our chronological records
-  const clinicalRecords = [...baselineData];
-  
-  if (patient.vitals) {
-    patient.vitals.forEach(v => clinicalRecords.push(v));
-  }
-  
-  completedVisits.forEach((visit, index) => {
-    // Generate a slightly variation of the baseline to correspond to the real visit
-    const visitDateStr = new Date(visit.dateTime).toISOString().split('T')[0];
+    const pBaseline = [
+      { 
+        date: "2026-03-10", 
+        bpSys: pBaseSys - 4, 
+        bpDia: pBaseDia - 2, 
+        heartRate: pBaseHR - 3, 
+        temperature: parseFloat((pBaseTemp - 0.2).toFixed(1)) 
+      },
+      { 
+        date: "2026-04-12", 
+        bpSys: pBaseSys + 3, 
+        bpDia: pBaseDia + 4, 
+        heartRate: pBaseHR + 5, 
+        temperature: parseFloat((pBaseTemp + 0.3).toFixed(1)) 
+      },
+      { 
+        date: "2026-05-15", 
+        bpSys: pBaseSys - 1, 
+        bpDia: pBaseDia - 1, 
+        heartRate: pBaseHR + 1, 
+        temperature: parseFloat((pBaseTemp + 0.1).toFixed(1)) 
+      },
+    ];
+
+    const pCompletedVisits = appointments
+      .filter(a => a.patientId === p.id && a.status === 'Completed')
+      .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+
+    const pRecords = [...pBaseline];
+    if (p.vitals) {
+      p.vitals.forEach(v => pRecords.push(v));
+    }
     
-    // Use the visit ID as a seed variation
-    const visitSeed = visit.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const varSys = (visitSeed % 9) - 4; // -4 to +4
-    const varDia = (visitSeed % 7) - 3; // -3 to +3
-    const varHR = (visitSeed % 11) - 5; // -5 to +5
-    const varTemp = ((visitSeed % 7) - 3) / 10; // -0.3 to +0.3
+    pCompletedVisits.forEach((visit) => {
+      const visitDateStr = new Date(visit.dateTime).toISOString().split('T')[0];
+      const visitSeed = visit.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      const varSys = (visitSeed % 9) - 4; // -4 to +4
+      const varDia = (visitSeed % 7) - 3; // -3 to +3
+      const varHR = (visitSeed % 11) - 5; // -5 to +5
+      const varTemp = ((visitSeed % 7) - 3) / 10; // -0.3 to +0.3
 
-    clinicalRecords.push({
-      date: visitDateStr,
-      bpSys: baseSys + varSys,
-      bpDia: baseDia + varDia,
-      heartRate: baseHR + varHR,
-      temperature: parseFloat((baseTemp + varTemp).toFixed(1))
+      pRecords.push({
+        date: visitDateStr,
+        bpSys: pBaseSys + varSys,
+        bpDia: pBaseDia + varDia,
+        heartRate: pBaseHR + varHR,
+        temperature: parseFloat((pBaseTemp + varTemp).toFixed(1))
+      });
     });
-  });
 
-  // Ensure unique dates and sort chronologically
-  const uniqueRecords = Array.from(new Map(clinicalRecords.map(item => [item.date, item])).values())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .slice(-5);
+    return Array.from(new Map(pRecords.map(item => [item.date, item])).values())
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  };
+
+  // Get current patient unique sorted records (keep full history for interactive scroll or drill down!)
+  const uniqueRecords = getPatientRecords(patient);
 
   // Format dates for display
   const formattedChartData = uniqueRecords.map(record => {
@@ -105,12 +112,57 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
     return {
       ...record,
       displayDate: formattedDate,
-      bpDisplay: `${record.bpSys}/${record.bpDia} mmHg`
+      bpDisplay: `${record.bpSys}/${record.bpDia} mmHg`,
+      compBpSys: undefined as number | undefined,
+      compBpDia: undefined as number | undefined,
+      compHeartRate: undefined as number | undefined,
+      compTemperature: undefined as number | undefined,
     };
   });
 
-  // Current/latest parameters for dashboard quick display
+  // Current/latest parameters for dashboard quick display (always based on the last record of active patient)
   const latestRecord = formattedChartData[formattedChartData.length - 1];
+
+  // If comparison mode is active, merge companion patient records
+  let combinedChartData = [...formattedChartData];
+  if (comparisonMode && comparisonPatient) {
+    const recordsComp = getPatientRecords(comparisonPatient);
+    recordsComp.forEach(rb => {
+      const existing = combinedChartData.find(ca => ca.date === rb.date);
+      if (existing) {
+        existing.compBpSys = rb.bpSys;
+        existing.compBpDia = rb.bpDia;
+        existing.compHeartRate = rb.heartRate;
+        existing.compTemperature = rb.temperature;
+      } else {
+        const d = new Date(rb.date);
+        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const formattedDate = `${months[d.getMonth()]} ${d.getDate()}`;
+        combinedChartData.push({
+          date: rb.date,
+          bpSys: undefined as any,
+          bpDia: undefined as any,
+          heartRate: undefined as any,
+          temperature: undefined as any,
+          displayDate: formattedDate,
+          bpDisplay: `N/A mmHg`,
+          compBpSys: rb.bpSys,
+          compBpDia: rb.bpDia,
+          compHeartRate: rb.heartRate,
+          compTemperature: rb.temperature,
+        });
+      }
+    });
+
+    // Sort chronologically so chart draws properly
+    combinedChartData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+
+  // Calculate dynamic minimum and maximum thresholds of the current active patient dataset to display peak/valley ReferenceLines
+  const validSysValues = combinedChartData.map(d => d.bpSys).filter((v): v is number => typeof v === 'number');
+  const validDiaValues = combinedChartData.map(d => d.bpDia).filter((v): v is number => typeof v === 'number');
+  const maxSys = validSysValues.length > 0 ? Math.max(...validSysValues) : 130;
+  const minDia = validDiaValues.length > 0 ? Math.min(...validDiaValues) : 70;
 
   const handleDownloadCSV = () => {
     // Generate CSV export for BP, HR, Temp of the patient
@@ -184,17 +236,48 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
 
       {/* Embedded Chart Box */}
       <div className="bg-slate-950 border border-slate-850 rounded-xl p-4 space-y-3">
-        <div className="flex items-start justify-between">
+        {/* Controls and Actions row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-900 pb-3">
           <div className="space-y-0.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 font-mono">Recorded Vitals Index History</span>
             <div className="text-[9px] bg-slate-900 border border-slate-800 text-slate-400 px-2 py-0.5 rounded font-mono inline-block mt-1">
-              {formattedChartData.length} Readings Mapped
+              {combinedChartData.length} Readings Mapped
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Comparison Benchmarking Selector */}
+            <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-[10px] font-mono">
+              <label className="flex items-center gap-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
+                <input 
+                  type="checkbox" 
+                  checked={comparisonMode}
+                  onChange={(e) => {
+                    setComparisonMode(e.target.checked);
+                    if (e.target.checked && otherPatients.length > 0 && !comparePatientId) {
+                      setComparePatientId(otherPatients[0].id);
+                    }
+                  }}
+                  className="rounded border-slate-700 bg-slate-950 text-teal-550 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                />
+                <span>Benchmarking overlay</span>
+              </label>
+
+              {comparisonMode && otherPatients.length > 0 && (
+                <select
+                  value={comparePatientId}
+                  onChange={(e) => setComparePatientId(e.target.value)}
+                  className="bg-slate-950 text-[10px] text-indigo-400 border border-slate-800 rounded px-1.5 py-0.5 outline-none cursor-pointer focus:border-indigo-600 font-bold"
+                >
+                  {otherPatients.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} ({p.bloodGroup})</option>
+                  ))}
+                </select>
+              )}
+            </div>
+
             <button
               onClick={handleDownloadCSV}
-              className="inline-flex items-center gap-1 border border-slate-800 hover:border-slate-700 bg-slate-900/80 hover:bg-slate-850 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-all"
+              className="inline-flex items-center gap-1 border border-slate-800 hover:border-slate-700 bg-slate-900/80 hover:bg-slate-850 text-slate-300 hover:text-white px-2 py-1 rounded text-[10px] font-mono cursor-pointer transition-all animate-fade-in"
               title="Download Vitals CSV"
             >
               <Download className="h-3 w-3" />
@@ -212,11 +295,11 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
           </div>
         </div>
 
-        <div className="h-[180px] w-full" id="vitals-recharts-chart-wrapper">
+        <div className="h-[210px] w-full" id="vitals-recharts-chart-wrapper">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart
-              data={formattedChartData}
-              margin={{ top: 10, right: 10, left: -25, bottom: 0 }}
+              data={combinedChartData}
+              margin={{ top: 15, right: 10, left: -25, bottom: 0 }}
             >
               <defs>
                 <linearGradient id="colorSys" x1="0" y1="0" x2="0" y2="1">
@@ -226,12 +309,25 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
               {/* Heatmap overlay background zones */}
-              <ReferenceArea {...({ y1: 90, y2: 120, fill: "#10b981", fillOpacity: 0.06 } as any)} />
-              <ReferenceArea {...({ y1: 120, y2: 140, fill: "#eab308", fillOpacity: 0.06 } as any)} />
-              <ReferenceArea {...({ y1: 140, y2: 200, fill: "#f43f5e", fillOpacity: 0.06 } as any)} />
-              <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.04 } as any)} />
-              <ReferenceArea {...({ y1: 80, y2: 90, fill: "#eab308", fillOpacity: 0.03 } as any)} />
-              <ReferenceArea {...({ y1: 50, y2: 60, fill: "#ef4444", fillOpacity: 0.04 } as any)} />
+              <ReferenceArea {...({ y1: 90, y2: 120, fill: "#10b981", fillOpacity: 0.05 } as any)} />
+              <ReferenceArea {...({ y1: 120, y2: 140, fill: "#eab308", fillOpacity: 0.04 } as any)} />
+              <ReferenceArea {...({ y1: 140, y2: 200, fill: "#f43f5e", fillOpacity: 0.04 } as any)} />
+              <ReferenceArea {...({ y1: 60, y2: 80, fill: "#3b82f6", fillOpacity: 0.03 } as any)} />
+              
+              {/* Peak and valley annotations directly annotated on the chart */}
+              <ReferenceLine 
+                y={maxSys} 
+                stroke="#f43f5e" 
+                strokeDasharray="4 4" 
+                label={{ value: `Peak Sys: ${maxSys} mmHg`, fill: '#f43f5e', fontSize: 9, position: 'insideTopLeft', fontWeight: 'bold' }} 
+              />
+              <ReferenceLine 
+                y={minDia} 
+                stroke="#3b82f6" 
+                strokeDasharray="4 4" 
+                label={{ value: `Valley Dia: ${minDia} mmHg`, fill: '#3b82f6', fontSize: 9, position: 'insideBottomLeft', fontWeight: 'bold' }} 
+              />
+
               <XAxis 
                 dataKey="displayDate" 
                 stroke="#71717a" 
@@ -244,48 +340,61 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 fontSize={10} 
                 tickLine={false} 
                 axisLine={false}
-                domain={[50, 150]}
+                domain={[50, 160]}
               />
               <Tooltip
                 cursor={{ stroke: '#14b8a6', strokeWidth: 1.5, strokeDasharray: '3 3' }}
                 content={({ active, payload, label }) => {
                   if (active && payload && payload.length) {
                     const data = payload[0].payload;
+                    const hasComp = comparisonMode && comparisonPatient;
                     return (
-                      <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 shadow-xl space-y-2 font-mono text-xs text-white max-w-xs">
-                        <div className="text-teal-400 font-bold border-b border-slate-900 pb-1 flex items-center justify-between">
+                      <div className="bg-slate-900/95 border border-slate-800 rounded-lg p-3 shadow-2xl space-y-2.5 font-mono text-xs text-white max-w-xs md:max-w-md backdrop-blur-md">
+                        <div className="text-teal-400 font-bold border-b border-slate-800 pb-1.5 flex items-center justify-between">
                           <span>📅 {data.date}</span>
-                          <span className="text-[9px] text-slate-500 font-normal">{label}</span>
+                          <span className="text-[9px] text-slate-505 font-semibold bg-slate-950 px-1.5 py-0.5 rounded uppercase">{label}</span>
                         </div>
-                        <div className="space-y-1 text-[10px]">
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-rose-400 flex items-center gap-1 font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                              Systolic BP:
-                            </span>
-                            <span className="font-bold text-slate-100">{data.bpSys} mmHg</span>
+                        <div className={`grid ${hasComp ? 'grid-cols-2 divide-x divide-slate-800 gap-3' : 'grid-cols-1'}`}>
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-bold text-teal-450 border-b border-slate-950 pb-0.5 mb-1 truncate max-w-[140px] uppercase">{patient.name}</div>
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="text-rose-400">BP Systolic:</span>
+                              <span className="font-bold text-slate-100">{data.bpSys !== undefined ? `${data.bpSys} mmHg` : 'N/A'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="text-blue-400">BP Diastolic:</span>
+                              <span className="font-bold text-slate-100">{data.bpDia !== undefined ? `${data.bpDia} mmHg` : 'N/A'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="text-emerald-400">Pulse:</span>
+                              <span className="font-bold text-slate-100">{data.heartRate !== undefined ? `${data.heartRate} bpm` : 'N/A'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-3 text-[10px]">
+                              <span className="text-amber-400">Temperature:</span>
+                              <span className="font-bold text-slate-100">{data.temperature !== undefined ? `${data.temperature} °F` : 'N/A'}</span>
+                            </div>
                           </div>
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-blue-400 flex items-center gap-1 font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
-                              Diastolic BP:
-                            </span>
-                            <span className="font-bold text-slate-100">{data.bpDia} mmHg</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-emerald-400 flex items-center gap-1 font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                              Pulse Rate:
-                            </span>
-                            <span className="font-bold text-slate-100">{data.heartRate} bpm</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-4">
-                            <span className="text-amber-400 flex items-center gap-1 font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                              Temperature:
-                            </span>
-                            <span className="font-bold text-slate-100">{data.temperature} °F</span>
-                          </div>
+                          {hasComp && (
+                            <div className="space-y-1 pl-3">
+                              <div className="text-[10px] font-bold text-indigo-400 border-b border-slate-950 pb-0.5 mb-1 truncate max-w-[140px] uppercase">{comparisonPatient.name}</div>
+                              <div className="flex items-center justify-between gap-3 text-[10px]">
+                                <span className="text-rose-300">BP Systolic:</span>
+                                <span className="font-bold text-slate-300">{data.compBpSys !== undefined ? `${data.compBpSys} mmHg` : 'N/A'}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 text-[10px]">
+                                <span className="text-blue-300">BP Diastolic:</span>
+                                <span className="font-bold text-slate-300">{data.compBpDia !== undefined ? `${data.compBpDia} mmHg` : 'N/A'}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 text-[10px]">
+                                <span className="text-emerald-300">Pulse:</span>
+                                <span className="font-bold text-slate-300">{data.compHeartRate !== undefined ? `${data.compHeartRate} bpm` : 'N/A'}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-3 text-[10px]">
+                                <span className="text-amber-300">Temperature:</span>
+                                <span className="font-bold text-slate-300">{data.compTemperature !== undefined ? `${data.compTemperature} °F` : 'N/A'}</span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -294,7 +403,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 }}
               />
               <Line 
-                name="Systolic BP" 
+                name={`${patient.name} (Systolic)`}
                 type="monotone" 
                 dataKey="bpSys" 
                 stroke="#f43f5e" 
@@ -303,7 +412,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 activeDot={{ r: 6 }} 
               />
               <Line 
-                name="Diastolic BP" 
+                name={`${patient.name} (Diastolic)`}
                 type="monotone" 
                 dataKey="bpDia" 
                 stroke="#3b82f6" 
@@ -311,12 +420,56 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
                 dot={{ r: 3 }}
               />
               <Line 
-                name="Pulse Rate" 
+                name={`${patient.name} (Pulse)`}
                 type="monotone" 
                 dataKey="heartRate" 
                 stroke="#10b981" 
                 strokeWidth={2} 
                 dot={{ r: 4 }}
+              />
+
+              {/* Benchmarking overlay visual traces */}
+              {comparisonMode && comparisonPatient && (
+                <>
+                  <Line 
+                    name={`${comparisonPatient.name} (Systolic)`}
+                    type="monotone" 
+                    dataKey="compBpSys" 
+                    stroke="#fda4af" 
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5} 
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }} 
+                  />
+                  <Line 
+                    name={`${comparisonPatient.name} (Diastolic)`}
+                    type="monotone" 
+                    dataKey="compBpDia" 
+                    stroke="#93c5fd" 
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5} 
+                    dot={{ r: 2 }}
+                  />
+                  <Line 
+                    name={`${comparisonPatient.name} (Pulse)`}
+                    type="monotone" 
+                    dataKey="compHeartRate" 
+                    stroke="#a7f3d0" 
+                    strokeDasharray="4 4"
+                    strokeWidth={1.5} 
+                    dot={{ r: 2 }}
+                  />
+                </>
+              )}
+
+              {/* Interactive Scrollable Brush for zoom and drill down into clinical history */}
+              <Brush 
+                dataKey="displayDate" 
+                height={20} 
+                stroke="#14b8a6" 
+                fill="#0b0f19" 
+                tickFormatter={() => ""} 
+                travellerWidth={6}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -324,7 +477,7 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
 
         <div className="border-t border-slate-900 pt-3 space-y-2">
           {/* Legend series */}
-          <div className="flex flex-wrap items-center justify-center gap-4 text-[10px] font-mono text-slate-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[10px] font-mono text-slate-400">
             <div className="flex items-center gap-1.5">
               <span className="w-2.5 h-1 rounded-full bg-rose-500 inline-block"></span>
               <span>BP Systolic (mmHg)</span>
@@ -337,6 +490,12 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
               <span className="w-2.5 h-1 rounded-full bg-emerald-500 inline-block"></span>
               <span>Pulse (bpm)</span>
             </div>
+            {comparisonMode && comparisonPatient && (
+              <div className="flex items-center gap-1.5 text-indigo-400">
+                <span className="w-2.5 h-1 border-b-2 border-dashed border-indigo-400 inline-block"></span>
+                <span>Benchmarked Patient Traces (Dashed Lines)</span>
+              </div>
+            )}
           </div>
           
           {/* Heatmap Range Indicators */}

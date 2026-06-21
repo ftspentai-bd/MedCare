@@ -2702,7 +2702,7 @@ export default function App() {
                             </div>
                           ) : detailTab === 'vitals' ? (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-white">
-                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
+                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} allPatients={patients} />
                             </div>
                           ) : detailTab === 'age-trend' ? (
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 text-white">
@@ -3104,6 +3104,38 @@ export default function App() {
                 <>
                   {/* Main Directory Table list */}
                   <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs overflow-hidden" id="patient-dashboard-grid">
+                    {/* Summary count cards showing patient counts in each blood group category */}
+                    <div className="p-4 border-b border-slate-200 dark:border-slate-850 bg-slate-50/20 dark:bg-slate-950/20">
+                      <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase font-mono tracking-wider mb-2 flex items-center justify-between">
+                        <span>🩸 Global Blood Group Census Summary Counts</span>
+                        <span className="text-[9px] lowercase font-normal">(unfiltered database distribution)</span>
+                      </p>
+                      <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+                        {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(group => {
+                          const count = patients.filter(p => p.bloodGroup === group).length;
+                          const isSelected = bloodGroupFilter === group;
+                          return (
+                            <div 
+                              key={group} 
+                              onClick={() => setBloodGroupFilter(group)}
+                              className={`px-2 py-1.5 border rounded-lg text-center transition-all cursor-pointer select-none ${
+                                isSelected 
+                                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-500 shadow-xs' 
+                                  : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-850 hover:border-slate-300 dark:hover:border-slate-750'
+                              }`}
+                            >
+                              <span className={`block text-[10px] font-bold font-mono ${isSelected ? 'text-rose-600 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                {group}
+                              </span>
+                              <span className={`block text-xs font-bold ${isSelected ? 'text-rose-800 dark:text-rose-350 font-extrabold' : 'text-slate-850 dark:text-white'}`}>
+                                {count}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex flex-col xl:flex-row xl:items-center gap-4 justify-between bg-slate-50 dark:bg-slate-950/40">
                       <div className="flex items-center space-x-3 w-full xl:max-w-xs">
                         <div className="relative w-full">
@@ -3169,6 +3201,18 @@ export default function App() {
                               <option value="O-">O-</option>
                             </select>
                           </div>
+
+                          {/* Clear Blood Group Filter Badge reset block */}
+                          {bloodGroupFilter !== 'all' && (
+                            <button
+                              onClick={() => setBloodGroupFilter('all')}
+                              className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/40 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-455 text-[10px] font-bold rounded-lg cursor-pointer transition-colors"
+                              title="Reset blood group filter instantly"
+                            >
+                              <span>Clear Filter</span>
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
 
                           <button
                             onClick={triggerDownloadPatientsCSV}
@@ -3577,7 +3621,7 @@ export default function App() {
                                   <ConsultationReminder patientId={pat.id} appointments={appointments} />
                                 </div>
                               ) : detailTab === 'vitals' ? (
-                                <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
+                                <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} allPatients={patients} />
                               ) : detailTab === 'age-trend' ? (
                                 <PatientAgeTrendChart 
                                   patientId={pat.id} 
@@ -3905,7 +3949,7 @@ export default function App() {
                               <ConsultationReminder patientId={pat.id} appointments={appointments} />
                             </div>
                             ) : detailTab === 'vitals' ? (
-                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} />
+                              <PatientVitalsChart patient={pat} appointments={appointments} updatePatient={updatePatient} allPatients={patients} />
                             ) : detailTab === 'medications' ? (
                               <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl">
                                 <PatientMedications patient={pat} updatePatient={updatePatient} />

@@ -178,6 +178,10 @@ export default function App() {
   const [historyStatusFilter, setHistoryStatusFilter] = useState<'All' | 'Completed' | 'Pending' | 'Cancelled'>('Completed');
   
   const handleBulkExport = () => {
+    setExportConfirmTarget('bulk_patients');
+  };
+
+  const executeBulkExport = () => {
     const selected = patients.filter(p => selectedPatientIds.has(p.id));
     if (selected.length === 0) return;
     const headers = ["ID", "Name", "Age", "DOB", "Gender", "Blood Group", "Contact", "Address", "Task Status", "Has Recent Visit", "Emergency Contact"];
@@ -193,6 +197,7 @@ export default function App() {
     link.download = `selected_patients_${Date.now()}.csv`;
     link.click();
     setSelectedPatientIds(new Set());
+    setExportConfirmTarget(null);
   };
 
   const handleBulkMarkRoutine = () => {
@@ -230,6 +235,9 @@ export default function App() {
   const [schedIsRecurring, setSchedIsRecurring] = useState(false);
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null);
   const [deleteAppointmentId, setDeleteAppointmentId] = useState<string | null>(null);
+
+  const [exportConfirmTarget, setExportConfirmTarget] = useState<'patients' | 'appointments' | 'bulk_patients' | null>(null);
+  const [emailSimTarget, setEmailSimTarget] = useState<string | null>(null);
 
   // Auto-logout feature for security
   React.useEffect(() => {
@@ -541,7 +549,11 @@ export default function App() {
   });
 
   // Client-side utility function to trigger CSV file download for filtered patient list
-  const downloadPatientsCSV = () => {
+  const triggerDownloadPatientsCSV = () => {
+    setExportConfirmTarget('patients');
+  };
+
+  const executeDownloadPatientsCSV = () => {
     const headers = [
       "Patient ID", 
       "Full Name", 
@@ -584,10 +596,15 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setExportConfirmTarget(null);
   };
 
   // Client-side utility function to trigger CSV file download for filtered appointment list
-  const downloadAppointmentsCSV = () => {
+  const triggerDownloadAppointmentsCSV = () => {
+    setExportConfirmTarget('appointments');
+  };
+
+  const executeDownloadAppointmentsCSV = () => {
     const headers = [
       "Appointment ID",
       "Patient ID",
@@ -622,6 +639,7 @@ export default function App() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setExportConfirmTarget(null);
   };
 
   // Overlap / Conflict Validation Helper
@@ -1964,7 +1982,7 @@ export default function App() {
                               />
                             </div>
                           ) : (() => {
-                            const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
+                            const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                             return (
                               <div className="space-y-3">
                                 <div className="flex justify-end pr-1">
@@ -1985,21 +2003,30 @@ export default function App() {
                                     <p className="text-[10px] text-slate-400 mt-1">This patient does not have any consultation records matching the filter.</p>
                                   </div>
                                 ) : (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                    {filteredVisits.map(visit => (
-                                      <div key={visit.id} className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2">
-                                        <div className="flex items-center justify-between text-[10px]">
-                                          <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold">{visit.id}</span>
-                                          <span className="text-slate-400 font-mono">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                  <div className="relative pl-6 py-2">
+                                    <div className="absolute top-0 bottom-0 left-[9px] w-0.5 bg-slate-200 dark:bg-slate-800"></div>
+                                    <div className="space-y-6 max-h-[160px] overflow-y-auto pr-2 relative">
+                                      {filteredVisits.map((visit, i) => (
+                                        <div key={visit.id} className="relative group">
+                                          <div className="absolute w-2.5 h-2.5 bg-teal-500 rounded-full -left-[19px] top-1.5 ring-4 ring-white dark:ring-slate-900 group-hover:scale-110 transition-transform"></div>
+                                          <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-200 dark:border-slate-800 space-y-2 hover:border-teal-500/50 transition-colors">
+                                            <div className="flex items-center justify-between text-[10px]">
+                                              <span className="font-mono text-teal-600 dark:text-teal-400 font-semibold flex items-center gap-1.5">
+                                                {visit.id}
+                                                <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 px-1 py-0.5 rounded text-[9px] uppercase tracking-wider">{visit.status}</span>
+                                              </span>
+                                              <span className="text-slate-400 font-mono font-medium">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                            </div>
+                                            <div>
+                                              <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{visit.doctorName}</p>
+                                              <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2 leading-relaxed" title={visit.notes}>
+                                                {visit.notes || 'No consultative notes mapped.'}
+                                              </p>
+                                            </div>
+                                          </div>
                                         </div>
-                                        <div>
-                                          <p className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{visit.doctorName}</p>
-                                          <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2" title={visit.notes}>
-                                            {visit.notes || 'No consultative notes mapped.'}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
                                   </div>
                                 )}
                               </div>
@@ -2376,7 +2403,7 @@ export default function App() {
                           </div>
 
                           <button
-                            onClick={downloadPatientsCSV}
+                            onClick={triggerDownloadPatientsCSV}
                             className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
                             title="Download currently filtered list as a CSV spreadsheet"
                           >
@@ -2534,7 +2561,22 @@ export default function App() {
                                         </div>
                                       )}
                                       {patient.taskStatus === 'Urgent' && (
-                                        <span className="bg-rose-600 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-sm border border-rose-700 uppercase tracking-widest flex items-center gap-1 ml-1" title="Emergency / Urgent attention required"><AlertCircle className="w-2.5 h-2.5" /> EMERGENCY</span>
+                                        <div className="relative group/emg">
+                                          <span className="bg-rose-600 text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded shadow-sm border border-rose-700 uppercase tracking-widest flex items-center gap-1 ml-1 cursor-pointer"><AlertCircle className="w-2.5 h-2.5" /> EMERGENCY</span>
+                                          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 invisible opacity-0 group-hover/emg:visible group-hover/emg:opacity-100 transition-all duration-200 z-50 w-48 bg-slate-900 border border-slate-800 text-slate-100 text-xs rounded-lg shadow-xl p-3 flex flex-col space-y-2 pointer-events-auto origin-top scale-95 group-hover/emg:scale-100">
+                                            <span className="font-semibold text-rose-400 border-b border-slate-800 pb-1.5 text-center">Urgent Profile Flaged</span>
+                                            <button 
+                                              onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                setEmailSimTarget(`Automated 'Emergency Protocol' email triggered and sent to ${patient.emergencyContactName || 'registered contact'}.`);
+                                                setTimeout(() => setEmailSimTarget(null), 4000);
+                                              }} 
+                                              className="bg-rose-600 hover:bg-rose-700 text-white text-[10px] w-full py-1.5 rounded uppercase tracking-wider font-bold transition-colors shadow-sm cursor-pointer border border-rose-500"
+                                            >
+                                              Trigger Email Protocol
+                                            </button>
+                                          </div>
+                                        </div>
                                       )}
                                       {hasHealthAlert(patient) && patient.taskStatus !== 'Urgent' && (
                                         <span className="bg-rose-50 dark:bg-rose-900/50 text-rose-700 dark:text-rose-400 text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800 uppercase tracking-tight" title="High-risk vitals">Health Alert</span>
@@ -2862,7 +2904,7 @@ export default function App() {
                                   );
                                 })()
                               ) : (() => {
-                                const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
+                                const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                                 return (
                                   <div className="space-y-3 font-sans">
                                     <div className="flex justify-end pr-1">
@@ -2883,21 +2925,30 @@ export default function App() {
                                         <p className="text-[10px] text-slate-500 mt-1">This patient does not have any consultation records matching the filter.</p>
                                       </div>
                                     ) : (
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                        {filteredVisits.map(visit => (
-                                          <div key={visit.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
-                                            <div className="flex items-center justify-between text-[10px]">
-                                              <span className="font-mono text-teal-400 font-semibold">{visit.id}</span>
-                                              <span className="text-slate-400 font-mono">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                      <div className="relative pl-6 py-2">
+                                        <div className="absolute top-0 bottom-0 left-[9px] w-0.5 bg-slate-800"></div>
+                                        <div className="space-y-6 max-h-[160px] overflow-y-auto pr-2 relative">
+                                          {filteredVisits.map((visit, i) => (
+                                            <div key={visit.id} className="relative group">
+                                              <div className="absolute w-2.5 h-2.5 bg-teal-500 rounded-full -left-[19px] top-1.5 ring-4 ring-slate-900 group-hover:scale-110 transition-transform"></div>
+                                              <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 hover:border-teal-500/50 transition-colors">
+                                                <div className="flex items-center justify-between text-[10px]">
+                                                  <span className="font-mono text-teal-400 font-semibold flex items-center gap-1.5">
+                                                    {visit.id}
+                                                    <span className="bg-slate-800 text-slate-400 px-1 py-0.5 rounded text-[9px] uppercase tracking-wider">{visit.status}</span>
+                                                  </span>
+                                                  <span className="text-slate-400 font-mono">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                                </div>
+                                                <div>
+                                                  <p className="text-[11px] font-bold text-slate-200">{visit.doctorName}</p>
+                                                  <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed" title={visit.notes}>
+                                                    {visit.notes || 'No consultative notes mapped.'}
+                                                  </p>
+                                                </div>
+                                              </div>
                                             </div>
-                                            <div>
-                                              <p className="text-[11px] font-bold text-slate-200">{visit.doctorName}</p>
-                                              <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2" title={visit.notes}>
-                                                {visit.notes || 'No consultative notes mapped.'}
-                                              </p>
-                                            </div>
-                                          </div>
-                                        ))}
+                                          ))}
+                                        </div>
                                       </div>
                                     )}
                                   </div>
@@ -3143,7 +3194,7 @@ export default function App() {
                                 );
                               })()
                             ) : (() => {
-                              const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter));
+                              const filteredVisits = appointments.filter(a => a.patientId === pat.id && (historyStatusFilter === 'All' || a.status === historyStatusFilter)).sort((a,b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
                               return (
                                 <div className="space-y-3 font-sans">
                                   <div className="flex justify-end pr-1">
@@ -3164,21 +3215,30 @@ export default function App() {
                                       <p className="text-[10px] text-slate-500 mt-1">You do not have any consultation records matching the filter.</p>
                                     </div>
                                   ) : (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[160px] overflow-y-auto pr-1">
-                                      {filteredVisits.map(visit => (
-                                        <div key={visit.id} className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2">
-                                          <div className="flex items-center justify-between text-[10px]">
-                                            <span className="font-mono text-teal-400 font-semibold">{visit.id}</span>
-                                            <span className="text-slate-400 font-mono">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                    <div className="relative pl-6 py-2">
+                                      <div className="absolute top-0 bottom-0 left-[9px] w-0.5 bg-slate-800"></div>
+                                      <div className="space-y-6 max-h-[160px] overflow-y-auto pr-2 relative">
+                                        {filteredVisits.map((visit, i) => (
+                                          <div key={visit.id} className="relative group">
+                                            <div className="absolute w-2.5 h-2.5 bg-teal-500 rounded-full -left-[19px] top-1.5 ring-4 ring-slate-900 group-hover:scale-110 transition-transform"></div>
+                                            <div className="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 hover:border-teal-500/50 transition-colors">
+                                              <div className="flex items-center justify-between text-[10px]">
+                                                <span className="font-mono text-teal-400 font-semibold flex items-center gap-1.5">
+                                                  {visit.id}
+                                                  <span className="bg-slate-800 text-slate-400 px-1 py-0.5 rounded text-[9px] uppercase tracking-wider">{visit.status}</span>
+                                                </span>
+                                                <span className="text-slate-400 font-mono">{new Date(visit.dateTime).toLocaleDateString()}</span>
+                                              </div>
+                                              <div>
+                                                <p className="text-[11px] font-bold text-slate-200">{visit.doctorName}</p>
+                                                <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2 leading-relaxed" title={visit.notes}>
+                                                  {visit.notes || 'No consultative notes mapped.'}
+                                                </p>
+                                              </div>
+                                            </div>
                                           </div>
-                                          <div>
-                                            <p className="text-[11px] font-bold text-slate-200">{visit.doctorName}</p>
-                                            <p className="text-[10px] text-slate-400 mt-0.5 line-clamp-2" title={visit.notes}>
-                                              {visit.notes || 'No consultative notes mapped.'}
-                                            </p>
-                                          </div>
-                                        </div>
-                                      ))}
+                                        ))}
+                                      </div>
                                     </div>
                                   )}
                                 </div>
@@ -3549,7 +3609,7 @@ export default function App() {
                         )}
                       </div>
                       <button
-                        onClick={downloadAppointmentsCSV}
+                        onClick={triggerDownloadAppointmentsCSV}
                         className="inline-flex shrink-0 items-center space-x-1.5 px-3 py-2 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
                         title="Download currently filtered schedule as a CSV spreadsheet"
                       >
@@ -4151,6 +4211,66 @@ export default function App() {
               </div>
             </motion.div>
           </div>
+        )}
+      </AnimatePresence>
+
+      {/* Export Confirmation Modal */}
+      <AnimatePresence>
+        {exportConfirmTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setExportConfirmTarget(null)}></div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -10 }}
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-md p-6 relative z-10 font-sans"
+            >
+              <div className="flex items-center space-x-3 text-teal-600 dark:text-teal-400 mb-4">
+                <Download className="w-6 h-6" />
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">Export Confirmation</h3>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mb-6 leading-relaxed">
+                You are about to export {exportConfirmTarget === 'patients' ? 'the filtered patient roster' : exportConfirmTarget === 'bulk_patients' ? 'the selected patients' : 'the filtered appointments schedule'} to a CSV file. This contains sensitive clinical information. Are you sure you wish to proceed?
+              </p>
+              <div className="flex items-center justify-end space-x-3 font-mono text-xs">
+                <button 
+                  onClick={() => setExportConfirmTarget(null)}
+                  className="px-4 py-2 font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    if (exportConfirmTarget === 'patients') executeDownloadPatientsCSV();
+                    else if (exportConfirmTarget === 'appointments') executeDownloadAppointmentsCSV();
+                    else if (exportConfirmTarget === 'bulk_patients') executeBulkExport();
+                  }}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded shadow-sm transition-colors cursor-pointer uppercase tracking-wider flex items-center gap-2"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Initiate Download
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Email Simulation Toast */}
+      <AnimatePresence>
+        {emailSimTarget && (
+          <motion.div 
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-6 right-6 z-[100] max-w-sm bg-slate-900 border border-slate-800 text-white p-4 rounded-xl shadow-2xl flex gap-3 shadow-rose-900/20 items-start pointer-events-none"
+          >
+            <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />
+            <div className="space-y-1 font-sans">
+              <p className="text-sm font-bold tracking-tight">Protocol Executed</p>
+              <p className="text-xs text-slate-300 leading-relaxed">{emailSimTarget}</p>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 

@@ -93,7 +93,8 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
 
   // Ensure unique dates and sort chronologically
   const uniqueRecords = Array.from(new Map(clinicalRecords.map(item => [item.date, item])).values())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(-5);
 
   // Format dates for display
   const formattedChartData = uniqueRecords.map(record => {

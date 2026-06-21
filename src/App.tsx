@@ -78,6 +78,18 @@ export const hasHealthAlert = (patient: any): boolean => {
   return false;
 };
 
+export const getSysColor = (sys: number) => {
+  if (sys <= 120) return 'text-emerald-400';
+  if (sys <= 129) return 'text-amber-400';
+  return 'text-rose-400';
+};
+
+export const getDiaColor = (dia: number) => {
+  if (dia <= 80) return 'text-emerald-400';
+  if (dia <= 89) return 'text-amber-400';
+  return 'text-rose-400';
+};
+
 // Days until appointment counter utility
 export const getDaysUntil = (dateTimeStr: string): string => {
   if (!dateTimeStr) return '';
@@ -102,6 +114,24 @@ export const getDaysUntil = (dateTimeStr: string): string => {
   } else {
     return `${diffDays} days left`;
   }
+};
+
+export const getDaysUntilBirthday = (dobString: string): { days: number, isThisMonth: boolean } | null => {
+  if (!dobString) return null;
+  const birthDate = new Date(dobString);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let nextBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+  
+  if (nextBirthday < today) {
+    nextBirthday.setFullYear(today.getFullYear() + 1);
+  }
+
+  const diffTime = nextBirthday.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  return { days: diffDays, isThisMonth: nextBirthday.getMonth() === today.getMonth() && nextBirthday.getFullYear() === today.getFullYear() };
 };
 
 export default function App() {
@@ -838,6 +868,99 @@ export default function App() {
     setTimeout(() => {
       printWindow.print();
     }, 250);
+  };
+
+  const handleBulkPrint = () => {
+    const printWindow = window.open('', '', 'height=800,width=800');
+    if (!printWindow) return;
+
+    let concatHtml = '';
+    
+    selectedPatientIds.forEach(id => {
+      const pat = patients.find(p => p.id === id);
+      if (!pat) return;
+      
+      const patHistory = appointments.filter(a => a.patientId === pat.id).sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime());
+
+      concatHtml += `
+        <div class="page-break">
+          <h1>Patient Medical Summary</h1>
+          
+          <h2>Demographics</h2>
+          <div class="row"><span class="label">Patient Name:</span> <span class="value">${pat.name}</span></div>
+          <div class="row"><span class="label">Patient ID:</span> <span class="value">${pat.id}</span></div>
+          <div class="row"><span class="label">Date of Birth:</span> <span class="value">${pat.dateOfBirth}</span></div>
+          <div class="row"><span class="label">Blood Group:</span> <span class="value">${pat.bloodGroup}</span></div>
+          <div class="row"><span class="label">Address:</span> <span class="value">${pat.address || 'N/A'}</span></div>
+          <div class="row"><span class="label">Emergency Contact:</span> <span class="value">${pat.emergencyContactName || 'N/A'} (${pat.emergencyContactPhone || 'N/A'})</span></div>
+          
+          <h2>Clinical Notes</h2>
+          <div class="notes">${pat.clinicalNotes || 'No persistent clinical notes recorded.'}</div>
+          
+          <h2>Visit History</h2>
+          ${patHistory.length > 0 ? `
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Doctor</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${patHistory.map(apt => `
+                  <tr>
+                    <td>${new Date(apt.dateTime).toLocaleDateString()} ${new Date(apt.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                    <td>${apt.doctorName || '-'}</td>
+                    <td>${apt.type || '-'}</td>
+                    <td>${apt.status || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p style="font-size: 14px; color: #64748b;">No visits recorded.</p>'}
+          
+          <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px dashed #cbd5e1; padding-top: 20px;">
+            Confidential Medical Record. Generated on ${new Date().toLocaleString()}
+          </div>
+        </div>
+      `;
+    });
+
+    const finalHtml = `
+      <html>
+        <head>
+          <title>Bulk Patient Summaries</title>
+          <style>
+            body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.5; }
+            .page-break { page-break-after: always; margin-bottom: 60px; padding-bottom: 20px; border-bottom: 2px dashed #cbd5e1; }
+            .page-break:last-child { page-break-after: auto; border-bottom: none; margin-bottom: 0px; padding-bottom: 0px; }
+            h1 { text-align: center; border-bottom: 2px solid #cbd5e1; padding-bottom: 20px; font-size: 24px; color: #0f172a; }
+            h2 { font-size: 18px; color: #334155; margin-top: 30px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+            .label { font-weight: bold; color: #64748b; font-size: 14px; }
+            .value { font-weight: 500; font-size: 14px; text-align: right; }
+            .notes { background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; font-family: monospace; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+            th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; color: #475569; }
+            @media print {
+              .page-break { page-break-after: always; border-bottom: none; }
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${concatHtml}
+        </body>
+      </html>
+    `;
+    printWindow.document.write(finalHtml);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   // Change Appointment Status
@@ -2448,6 +2571,9 @@ export default function App() {
                             <button onClick={handleBulkExport} className="px-2 py-1 text-[10px] bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded font-semibold text-slate-700 dark:text-slate-300 cursor-pointer shadow-sm transition">
                               Export Selected
                             </button>
+                            <button onClick={handleBulkPrint} className="px-2 py-1 text-[10px] bg-sky-600 hover:bg-sky-700 text-white rounded font-semibold cursor-pointer shadow-sm transition">
+                              Print Summaries
+                            </button>
                             <button onClick={handleBulkMarkRoutine} className="px-2 py-1 text-[10px] bg-teal-600 hover:bg-teal-700 text-white rounded font-semibold cursor-pointer shadow-sm transition">
                               Mark as Routine
                             </button>
@@ -2551,7 +2677,7 @@ export default function App() {
                                           <div className="space-y-1">
                                             <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded">
                                               <span className="text-slate-500 text-[9px] uppercase tracking-wider">BP</span>
-                                              <span className="font-bold text-white"><span className="text-rose-400">{patient.vitals[patient.vitals.length - 1].bpSys}</span> <span className="text-slate-600">/</span> <span className="text-blue-400">{patient.vitals[patient.vitals.length - 1].bpDia}</span> <span className="text-[9px] text-slate-600 font-normal ml-0.5">mmHg</span></span>
+                                              <span className="font-bold text-white"><span className={getSysColor(patient.vitals[patient.vitals.length - 1].bpSys)}>{patient.vitals[patient.vitals.length - 1].bpSys}</span> <span className="text-slate-600">/</span> <span className={getDiaColor(patient.vitals[patient.vitals.length - 1].bpDia)}>{patient.vitals[patient.vitals.length - 1].bpDia}</span> <span className="text-[9px] text-slate-600 font-normal ml-0.5">mmHg</span></span>
                                             </div>
                                             <div className="flex justify-between items-center bg-slate-950 p-1.5 rounded">
                                               <span className="text-slate-500 text-[9px] uppercase tracking-wider">HR</span>
@@ -2749,7 +2875,18 @@ export default function App() {
                                       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                     <div>
                                       <span className="text-slate-400 block font-mono">Age (DOB)</span>
-                                      <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+                                      <span className="font-semibold text-slate-200 flex items-center flex-wrap gap-1 mt-0.5">
+                                        <span>{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+                                        {(() => {
+                                          const bday = getDaysUntilBirthday(pat.dateOfBirth);
+                                          if (!bday) return null;
+                                          return (
+                                            <span className={`ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-mono font-bold tracking-tight ${bday.isThisMonth ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/50' : 'bg-slate-800 text-slate-400'}`}>
+                                              {bday.days === 0 ? '🎉 Birthday Today!' : `🎂 ${bday.days}d to bday`}
+                                            </span>
+                                          );
+                                        })()}
+                                      </span>
                                     </div>
                                     <div>
                                       <span className="text-slate-400 block font-mono">Blood Classification</span>
@@ -3057,7 +3194,18 @@ export default function App() {
                                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
                                 <div>
                                   <span className="text-slate-400 block font-mono">My Age (DOB)</span>
-                                  <span className="font-semibold text-slate-200">{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+                                  <span className="font-semibold text-slate-200 flex items-center flex-wrap gap-1 mt-0.5">
+                                    <span>{calculateAge(pat.dateOfBirth)} yrs ({pat.dateOfBirth})</span>
+                                    {(() => {
+                                      const bday = getDaysUntilBirthday(pat.dateOfBirth);
+                                      if (!bday) return null;
+                                      return (
+                                        <span className={`ml-1 text-[9px] px-1.5 py-0.5 rounded-full font-mono font-bold tracking-tight ${bday.isThisMonth ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/50' : 'bg-slate-800 text-slate-400'}`}>
+                                          {bday.days === 0 ? '🎉 Birthday Today!' : `🎂 ${bday.days}d to bday`}
+                                        </span>
+                                      );
+                                    })()}
+                                  </span>
                                 </div>
                                 <div>
                                   <span className="text-slate-400 block font-mono">Blood Classification</span>
@@ -4130,6 +4278,22 @@ export default function App() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setVitalSys(115 + Math.floor(Math.random() * 10));
+                  setVitalDia(75 + Math.floor(Math.random() * 10));
+                  setVitalHR(60 + Math.floor(Math.random() * 20));
+                  setVitalTemp(+(98.0 + Math.random()).toFixed(1));
+                  setEmailSimTarget('Bluetooth health monitor synchronized successfully. Vitals fields securely populated.');
+                  setTimeout(() => setEmailSimTarget(null), 4000);
+                }}
+                className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/80 text-indigo-700 dark:text-indigo-400 shadow-xs py-2.5 rounded text-[10px] uppercase font-bold tracking-wider transition-colors cursor-pointer font-mono"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                Sync Smart Device
+              </button>
               
               <form onSubmit={(e) => {
                 e.preventDefault();

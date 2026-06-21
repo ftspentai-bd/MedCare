@@ -111,6 +111,18 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
   // Current/latest parameters for dashboard quick display
   const latestRecord = formattedChartData[formattedChartData.length - 1];
 
+  const getSysColor = (sys: number) => {
+    if (sys < 120) return 'text-emerald-400';
+    if (sys < 130) return 'text-amber-400';
+    return 'text-rose-400';
+  };
+
+  const getDiaColor = (dia: number) => {
+    if (dia < 80) return 'text-emerald-400';
+    if (dia < 90) return 'text-amber-400';
+    return 'text-rose-400';
+  };
+
   return (
     <div className="space-y-4 font-sans text-white p-1" id="vitals-chart-panel">
       
@@ -118,8 +130,13 @@ export default function PatientVitalsChart({ patient, appointments, updatePatien
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-slate-950 p-2.5 rounded-lg border border-slate-800 flex items-center justify-between">
           <div className="space-y-0.5">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400">Blood Pressure</span>
-            <p className="text-xs font-mono font-bold text-rose-400">{latestRecord.bpSys}/{latestRecord.bpDia} <span className="text-[9px] font-normal text-slate-400">mmHg</span></p>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1">Blood Pressure <span className={`w-1.5 h-1.5 rounded-full block ${getSysColor(latestRecord.bpSys).replace('text-', 'bg-')}`}></span></span>
+            <p className="text-xs font-mono font-bold">
+              <span className={getSysColor(latestRecord.bpSys)}>{latestRecord.bpSys}</span>
+              <span className="text-slate-500 mx-0.5">/</span>
+              <span className={getDiaColor(latestRecord.bpDia)}>{latestRecord.bpDia}</span>
+              <span className="text-[9px] font-normal text-slate-400 ml-1">mmHg</span>
+            </p>
           </div>
           <Activity className="h-4 w-4 text-rose-500 opacity-80" />
         </div>

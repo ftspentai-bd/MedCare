@@ -288,6 +288,93 @@ export default function DoctorDashboard({
             )}
           </div>
 
+          {/* 3. PATIENT AGE DISTRIBUTION BY DECADE BAR CHART */}
+          {(() => {
+            const ageDecadeData = (() => {
+              const decades = [
+                { decade: '0-9', count: 0 },
+                { decade: '10-19', count: 0 },
+                { decade: '20-29', count: 0 },
+                { decade: '30-39', count: 0 },
+                { decade: '40-49', count: 0 },
+                { decade: '50-59', count: 0 },
+                { decade: '60-69', count: 0 },
+                { decade: '70-79', count: 0 },
+                { decade: '80+', count: 0 }
+              ];
+
+              patients.forEach(p => {
+                const age = calculateAge(p.dateOfBirth);
+                const decadeIndex = Math.floor(age / 10);
+                if (decadeIndex >= 0 && decadeIndex <= 7) {
+                  decades[decadeIndex].count++;
+                } else if (decadeIndex >= 8) {
+                  decades[8].count++;
+                }
+              });
+
+              return decades;
+            })();
+
+            return (
+              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-xs space-y-4 transition-colors">
+                <div>
+                  <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
+                    <Users className="h-5 w-5 text-indigo-500" />
+                    <span>Patient Age Distribution Analysis</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Registry demographic cohorts categorized by age decades to supervise scheduling populations
+                  </p>
+                </div>
+
+                <div className="h-60 w-full opacity-90 mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={ageDecadeData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" className="dark:stroke-slate-800/40" />
+                      <XAxis dataKey="decade" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <RechartsTooltip 
+                        cursor={{fill: '#f1f5f9', opacity: 0.05}}
+                        contentStyle={{ 
+                          backgroundColor: '#0f172a', 
+                          border: '1px solid #1e293b', 
+                          borderRadius: '8.5px',
+                          color: '#f8fafc',
+                          fontFamily: 'monospace',
+                          fontSize: '10px'
+                        }} 
+                      />
+                      <Bar dataKey="count" fill="#6366f1" radius={[4, 4, 0, 0]} barSize={28} name="Number of Patients" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Quick Metrics stats grid for demographics */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 pt-1 text-xs">
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border border-slate-100 dark:border-slate-850/50">
+                    <span className="text-slate-400 block font-mono text-[9px] uppercase tracking-wider font-bold">Registry Mean</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-205 font-mono text-xs">
+                      {patients.length > 0 ? Math.round(patients.reduce((sum, p) => sum + calculateAge(p.dateOfBirth), 0) / patients.length) : 0} Yrs
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-lg border border-slate-100 dark:border-slate-850/50">
+                    <span className="text-slate-400 block font-mono text-[9px] uppercase tracking-wider font-bold">Youth Cohort (0-19)</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-205 font-mono text-xs">
+                      {patients.filter(p => calculateAge(p.dateOfBirth) <= 19).length} Patients
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-955 rounded-lg border border-slate-100 dark:border-slate-850/50 col-span-2 sm:col-span-1">
+                    <span className="text-slate-400 block font-mono text-[9px] uppercase tracking-wider font-bold">Senior Cohort (60+)</span>
+                    <span className="font-bold text-slate-800 dark:text-slate-205 font-mono text-xs">
+                      {patients.filter(p => calculateAge(p.dateOfBirth) >= 60).length} Patients
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
         </div>
 
         {/* RIGHT SIDEBAR: QUICK REGISTRY LOOKUP & CLINICAL BOUND CHECKS (Col span 1) */}

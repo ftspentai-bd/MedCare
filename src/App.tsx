@@ -421,6 +421,10 @@ export default function App() {
   const [appointmentSearchQuery, setAppointmentSearchQuery] = useState('');
   const [ledgerTab, setLedgerTab] = useState<'calendar' | 'list'>('calendar');
   const [ledgerDocFilterId, setLedgerDocFilterId] = useState<string>('all');
+  const [ledgerStartDate, setLedgerStartDate] = useState<string>('');
+  const [ledgerEndDate, setLedgerEndDate] = useState<string>('');
+  const [docSearchInput, setDocSearchInput] = useState<string>('');
+  const [showDocSuggestions, setShowDocSuggestions] = useState<boolean>(false);
   
   const initialFormState = {
     name: '',
@@ -467,6 +471,18 @@ export default function App() {
     localStorage.setItem('draft_schedNotes', schedNotes);
     localStorage.setItem('draft_schedStatus', schedStatus);
   }, [schedPatientId, schedDoctorId, schedDateTime, schedNotes, schedStatus]);
+
+  // Sync doctor auto-suggest search input state with ledger filter ID state
+  React.useEffect(() => {
+    if (ledgerDocFilterId === 'all') {
+      setDocSearchInput('');
+    } else {
+      const activeDoc = initialDoctors.find(d => d.id === ledgerDocFilterId);
+      if (activeDoc) {
+        setDocSearchInput(activeDoc.name);
+      }
+    }
+  }, [ledgerDocFilterId]);
   
   // Selected detail states for pillars
   const [selectedTable, setSelectedTable] = useState<string>("patients");
@@ -1657,6 +1673,22 @@ export default function App() {
   const filteredAppointments = React.useMemo(() => {
     return appointments.filter(apt => {
       if (ledgerDocFilterId !== 'all' && apt.doctorId !== ledgerDocFilterId) return false;
+      
+      // Filter by custom start date
+      if (ledgerStartDate) {
+        const start = new Date(ledgerStartDate).getTime();
+        const aptTime = new Date(apt.dateTime).getTime();
+        if (aptTime < start) return false;
+      }
+      
+      // Filter by custom end date
+      if (ledgerEndDate) {
+        const end = new Date(ledgerEndDate);
+        end.setHours(23, 59, 59, 999);
+        const aptTime = new Date(apt.dateTime).getTime();
+        if (aptTime > end.getTime()) return false;
+      }
+
       if (!appointmentSearchQuery.trim()) return true;
       const q = appointmentSearchQuery.toLowerCase();
       return (
@@ -1666,7 +1698,7 @@ export default function App() {
         (apt.doctorId || '').toLowerCase().includes(q)
       );
     });
-  }, [appointments, appointmentSearchQuery, ledgerDocFilterId]);
+  }, [appointments, appointmentSearchQuery, ledgerDocFilterId, ledgerStartDate, ledgerEndDate]);
 
   if (!isAuthenticated) {
     return <LandingPage onLogin={(role) => {
@@ -4328,18 +4360,114 @@ export default function App() {
                   </div>
                   
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
-                    {/* Admin Doctor Filter Toggle */}
+                    {/* Improved Doctor-Specific Auto-Suggest Search Input */}
                     {userRole === 'admin' && (
-                      <select
-                        value={ledgerDocFilterId}
-                        onChange={(e) => setLedgerDocFilterId(e.target.value)}
-                        className="px-3 py-2 border border-slate-300 dark:border-slate-800 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-800 dark:text-slate-200 outline-none font-mono cursor-pointer transition-all"
-                      >
-                        <option value="all">ALL DEPARTMENTS & DOCTORS</option>
-                        {initialDoctors.map(doc => (
-                          <option key={doc.id} value={doc.id}>{doc.name}</option>
-                        ))}
-                      </select>
+                      <div className="relative w-full sm:w-64" id="doctor-autosuggest-container">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={docSearchInput}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setDocSearchInput(val);
+                              setShowDocSuggestions(true);
+                              if (val.trim() === '') {
+                                setLedgerDocFilterId('all');
+                              }
+                            }}
+                            onFocus={() => setShowDocSuggestions(true)}
+                            onBlur={() => {
+                              setTimeout(() => setShowDocSuggestions(false), 200);
+                            }}
+                            placeholder="Search provider (Doctor / Specialist)..."
+                            className="w-full px-3 py-2 border border-slate-300 dark:border-slate-800 rounded-lg text-xs bg-slate-50 dark:bg-slate-950 focus:bg-white dark:focus:bg-slate-900 text-slate-805 dark:text-slate-200 outline-none font-mono transition-all pr-8"
+                          />
+                          {docSearchInput && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDocSearchInput('');
+                                setLedgerDocFilterId('all');
+                                setShowDocSuggestions(false);
+                              }}
+                              className="absolute right-2.5 top-2 py-0.5 text-slate-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                        {showDocSuggestions && (
+                          <div className="absolute top-full left-0 right-0 mt-1 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-lg z-50 divide-y divide-slate-100 dark:divide-slate-800">
+                            {initialDoctors.filter(doc => 
+                              doc.name.toLowerCase().includes(docSearchInput.toLowerCase()) ||
+                              doc.specialization.toLowerCase().includes(docSearchInput.toLowerCase())
+                            ).length === 0 ? (
+                              <div className="p-3 text-[11px] text-slate-400 italic text-center font-mono">
+                                No matching providers
+                              </div>
+                            ) : (
+                              initialDoctors.filter(doc => 
+                                doc.name.toLowerCase().includes(docSearchInput.toLowerCase()) ||
+                                doc.specialization.toLowerCase().includes(docSearchInput.toLowerCase())
+                              ).map(doc => (
+                                <button
+                                  key={doc.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setLedgerDocFilterId(doc.id);
+                                    setDocSearchInput(doc.name);
+                                    setShowDocSuggestions(false);
+                                  }}
+                                  onMouseDown={() => {
+                                    setLedgerDocFilterId(doc.id);
+                                    setDocSearchInput(doc.name);
+                                    setShowDocSuggestions(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-teal-50 dark:hover:bg-slate-800/80 hover:text-teal-700 dark:hover:text-teal-400 transition font-mono border-b border-slate-50 dark:border-slate-850/20 last:border-0 cursor-pointer"
+                                >
+                                  <span className="font-bold">{doc.name}</span>
+                                  <span className="text-[10px] text-slate-400 dark:text-slate-500 block uppercase font-mono">{doc.specialization}</span>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Admin Date Range Picker */}
+                    {userRole === 'admin' && (
+                      <div className="flex items-center space-x-1.5 px-3 py-1.5 border border-slate-300 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-950 font-mono text-xs select-none max-w-xs md:max-w-none shadow-xs">
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase shrink-0">Range:</span>
+                        <input
+                          type="date"
+                          value={ledgerStartDate}
+                          onChange={(e) => setLedgerStartDate(e.target.value)}
+                          className="bg-transparent text-slate-805 dark:text-slate-200 border-none outline-none font-sans text-xs max-w-[105px] cursor-pointer"
+                          title="Start Date filter limit"
+                        />
+                        <span className="text-slate-400 px-0.5 shrink-0">&rarr;</span>
+                        <input
+                          type="date"
+                          value={ledgerEndDate}
+                          onChange={(e) => setLedgerEndDate(e.target.value)}
+                          className="bg-transparent text-slate-805 dark:text-slate-200 border-none outline-none font-sans text-xs max-w-[105px] cursor-pointer"
+                          title="End Date filter limit"
+                        />
+                        {(ledgerStartDate || ledgerEndDate) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLedgerStartDate('');
+                              setLedgerEndDate('');
+                            }}
+                            className="bg-slate-200 hover:bg-rose-500 hover:text-white dark:bg-slate-800 dark:hover:bg-rose-500 dark:hover:text-white text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded text-[9px] shrink-0 transition cursor-pointer"
+                            title="Clear date range filters"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
                     )}
 
                     {/* Switcher Controls */}

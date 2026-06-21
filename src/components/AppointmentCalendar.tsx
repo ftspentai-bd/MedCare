@@ -452,10 +452,8 @@ export default function AppointmentCalendar({
                     {deleteAppointment && (
                       <button
                         onClick={() => {
-                          if (confirm("Are you sure you want to permanently delete this scheduled appointment from registry state?")) {
-                            deleteAppointment(selectedAppt.id);
-                            setSelectedAppt(null);
-                          }
+                          deleteAppointment(selectedAppt.id);
+                          setSelectedAppt(null);
                         }}
                         className="w-full py-1.5 bg-rose-950/40 text-rose-400 hover:bg-rose-955 hover:bg-rose-900 border border-rose-900/30 rounded text-[10px] uppercase font-bold tracking-wider cursor-pointer flex items-center justify-center gap-1 transition"
                       >
